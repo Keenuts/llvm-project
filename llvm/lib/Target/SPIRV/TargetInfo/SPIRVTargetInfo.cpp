@@ -11,6 +11,10 @@
 
 using namespace llvm;
 
+Target &llvm::getTheSPIRVLTarget() {
+  static Target TheSPIRVLTarget;
+  return TheSPIRVLTarget;
+}
 Target &llvm::getTheSPIRV32Target() {
   static Target TheSPIRV32Target;
   return TheSPIRV32Target;
@@ -25,4 +29,6 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeSPIRVTargetInfo() {
                                     "SPIR-V 32-bit", "SPIRV");
   RegisterTarget<Triple::spirv64> Y(getTheSPIRV64Target(), "spirv64",
                                     "SPIR-V 64-bit", "SPIRV");
+  RegisterTarget<Triple::spirv> Z(getTheSPIRVLTarget(), "spirv",
+                                    "SPIR-V Logical", "SPIRV");
 }

@@ -1522,6 +1522,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::sparc:
   case Triple::sparcel:
   case Triple::spir:
+  case Triple::spirv:
   case Triple::spirv32:
   case Triple::tce:
   case Triple::tcele:
@@ -1570,6 +1571,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::avr:
   case Triple::csky:
   case Triple::dxil:
+  case Triple::spirv:
   case Triple::hexagon:
   case Triple::kalimba:
   case Triple::lanai:
@@ -1673,6 +1675,7 @@ Triple Triple::getBigEndianArchVariant() const {
   case Triple::shave:
   case Triple::spir64:
   case Triple::spir:
+  case Triple::spirv:
   case Triple::spirv32:
   case Triple::spirv64:
   case Triple::wasm32:
