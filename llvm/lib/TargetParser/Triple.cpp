@@ -70,6 +70,7 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
   case sparcv9:        return "sparcv9";
   case spir64:         return "spir64";
   case spir:           return "spir";
+  case spirv:          return "spirv";
   case spirv32:        return "spirv32";
   case spirv64:        return "spirv64";
   case systemz:        return "s390x";
@@ -154,6 +155,7 @@ StringRef Triple::getArchTypePrefix(ArchType Kind) {
   case spir:
   case spir64:      return "spir";
 
+  case spirv:
   case spirv32:
   case spirv64:     return "spirv";
 
@@ -381,6 +383,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
     .Case("hsail64", hsail64)
     .Case("spir", spir)
     .Case("spir64", spir64)
+    .Case("spirv", spirv)
     .Case("spirv32", spirv32)
     .Case("spirv64", spirv64)
     .Case("kalimba", kalimba)
@@ -521,6 +524,8 @@ static Triple::ArchType parseArch(StringRef ArchName) {
     .Case("hsail64", Triple::hsail64)
     .Case("spir", Triple::spir)
     .Case("spir64", Triple::spir64)
+    .Cases("spirv", "spirv1.0", "spirv1.1", "spirv1.2",
+           "spirv1.3", "spirv1.4", "spirv1.5", Triple::spirv)
     .Cases("spirv32", "spirv32v1.0", "spirv32v1.1", "spirv32v1.2",
            "spirv32v1.3", "spirv32v1.4", "spirv32v1.5", Triple::spirv32)
     .Cases("spirv64", "spirv64v1.0", "spirv64v1.1", "spirv64v1.2",
@@ -869,6 +874,7 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
   case Triple::wasm64:
     return Triple::Wasm;
 
+  case Triple::spirv:
   case Triple::spirv32:
   case Triple::spirv64:
     return Triple::SPIRV;
@@ -1391,6 +1397,7 @@ void Triple::setOSAndEnvironmentName(StringRef Str) {
 
 static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   switch (Arch) {
+  case llvm::Triple::spirv:
   case llvm::Triple::UnknownArch:
     return 0;
 
@@ -1775,6 +1782,7 @@ bool Triple::isLittleEndian() const {
   case Triple::sparcel:
   case Triple::spir64:
   case Triple::spir:
+  case Triple::spirv:
   case Triple::spirv32:
   case Triple::spirv64:
   case Triple::tcele:

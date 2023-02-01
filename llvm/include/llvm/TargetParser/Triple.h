@@ -96,6 +96,7 @@ public:
     hsail64,        // AMD HSAIL with 64-bit pointers
     spir,           // SPIR: standard portable IR for OpenCL 32-bit version
     spir64,         // SPIR: standard portable IR for OpenCL 64-bit version
+    spirv,          // SPIR-V with logical memory model
     spirv32,        // SPIR-V with 32-bit pointers
     spirv64,        // SPIR-V with 64-bit pointers
     kalimba,        // Kalimba: generic kalimba
@@ -771,7 +772,7 @@ public:
 
   /// Tests whether the target is SPIR-V (32/64-bit).
   bool isSPIRV() const {
-    return getArch() == Triple::spirv32 || getArch() == Triple::spirv64;
+    return getArch() == Triple::spirv32 || getArch() == Triple::spirv64 || getArch() == Triple::spirv;
   }
 
   /// Tests whether the target is NVPTX (32- or 64-bit).

@@ -38,6 +38,12 @@ void SPIRVTargetInfo::getTargetDefines(const LangOptions &Opts,
   DefineStd(Builder, "SPIRV", Opts);
 }
 
+void SPIRVLTargetInfo::getTargetDefines(const LangOptions &Opts,
+                                         MacroBuilder &Builder) const {
+  SPIRVTargetInfo::getTargetDefines(Opts, Builder);
+  DefineStd(Builder, "SPIRVL", Opts);
+}
+
 void SPIRV32TargetInfo::getTargetDefines(const LangOptions &Opts,
                                          MacroBuilder &Builder) const {
   SPIRVTargetInfo::getTargetDefines(Opts, Builder);

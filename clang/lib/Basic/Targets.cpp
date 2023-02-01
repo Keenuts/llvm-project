@@ -677,6 +677,8 @@ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
       return nullptr;
     return std::make_unique<SPIR64TargetInfo>(Triple, Opts);
   }
+  case llvm::Triple::spirv:
+    return new SPIRVLTargetInfo(Triple, Opts);
   case llvm::Triple::spirv32: {
     if (os != llvm::Triple::UnknownOS ||
         Triple.getEnvironment() != llvm::Triple::UnknownEnvironment)

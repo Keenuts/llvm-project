@@ -93,10 +93,13 @@ protected:
       : TargetInfo(Triple) {
     assert((Triple.isSPIR() || Triple.isSPIRV()) &&
            "Invalid architecture for SPIR or SPIR-V.");
-    assert(getTriple().getOS() == llvm::Triple::UnknownOS &&
-           "SPIR(-V) target must use unknown OS");
-    assert(getTriple().getEnvironment() == llvm::Triple::UnknownEnvironment &&
-           "SPIR(-V) target must use unknown environment type");
+    if (Triple.getArch() != llvm::Triple::ArchType::spirv) {
+      assert(getTriple().getOS() == llvm::Triple::UnknownOS &&
+             "OpenCL SPIR(-V) target must use unknown OS");
+      assert(getTriple().getEnvironment() == llvm::Triple::UnknownEnvironment &&
+             "SPIR(-V) target must use unknown environment type");
+    }
+    //FIXME: validate SPIRV env + os for graphics.
     TLSSupported = false;
     VLASupported = false;
     LongWidth = LongAlign = 64;
@@ -289,10 +292,13 @@ public:
   SPIRVTargetInfo(const llvm::Triple &Triple, const TargetOptions &Opts)
       : BaseSPIRTargetInfo(Triple, Opts) {
     assert(Triple.isSPIRV() && "Invalid architecture for SPIR-V.");
-    assert(getTriple().getOS() == llvm::Triple::UnknownOS &&
-           "SPIR-V target must use unknown OS");
-    assert(getTriple().getEnvironment() == llvm::Triple::UnknownEnvironment &&
-           "SPIR-V target must use unknown environment type");
+    if (Triple.getArch() != llvm::Triple::ArchType::spirv) {
+      assert(getTriple().getOS() == llvm::Triple::UnknownOS &&
+             "SPIR-V target must use unknown OS");
+      assert(getTriple().getEnvironment() == llvm::Triple::UnknownEnvironment &&
+             "SPIR-V target must use unknown environment type");
+    }
+    // FIXME: here
   }
 
   void getTargetDefines(const LangOptions &Opts,
@@ -301,6 +307,34 @@ public:
   bool hasFeature(StringRef Feature) const override {
     return Feature == "spirv";
   }
+};
+
+class LLVM_LIBRARY_VISIBILITY SPIRVLTargetInfo : public SPIRVTargetInfo {
+public:
+  SPIRVLTargetInfo(const llvm::Triple &Triple, const TargetOptions &Opts)
+      : SPIRVTargetInfo(Triple, Opts) {
+    assert(Triple.getArch() == llvm::Triple::spirv &&
+           "Invalid architecture for Logical SPIR-V.");
+    TLSSupported = false;
+    VLASupported = false;
+    LongWidth = LongAlign = 64;
+    UseAddrSpaceMapMangling = true;
+    HasLegalHalfType = true;
+    HasFloat16 = true;
+    NoAsmVariants = true;
+    PlatformMinVersion = Triple.getOSVersion();
+    PlatformName = llvm::Triple::getOSTypeName(Triple.getOS());
+    resetDataLayout("e-m:e-p:32:32-i1:32-i8:8-i16:16-i32:32-i64:64-f16:16-f32:"
+                    "32-f64:64-n8:16:32:64");
+    TheCXXABI.set(TargetCXXABI::Microsoft);
+  }
+
+  CallingConv getDefaultCallingConv() const override {
+    return CC_C;
+  }
+
+  void getTargetDefines(const LangOptions &Opts,
+                        MacroBuilder &Builder) const override;
 };
 
 class LLVM_LIBRARY_VISIBILITY SPIRV32TargetInfo : public SPIRVTargetInfo {
