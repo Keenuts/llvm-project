@@ -106,7 +106,11 @@ void SPIRVModuleAnalysis::setBaseInfo(const Module &M) {
     MAI.Mem =
         static_cast<SPIRV::MemoryModel::MemoryModel>(getMetadataUInt(MemMD, 1));
   } else {
-    MAI.Mem = SPIRV::MemoryModel::OpenCL;
+    if (ST->isOpenCLEnv()) {
+      MAI.Mem = SPIRV::MemoryModel::OpenCL;
+    } else {
+      MAI.Mem = SPIRV::MemoryModel::GLSL450;
+    }
     unsigned PtrSize = ST->getPointerSize();
     MAI.Addr = PtrSize == 32   ? SPIRV::AddressingModel::Physical32
                : PtrSize == 64 ? SPIRV::AddressingModel::Physical64
@@ -517,42 +521,44 @@ namespace llvm {
 namespace SPIRV {
 void RequirementHandler::initAvailableCapabilities(const SPIRVSubtarget &ST) {
   // TODO: Implemented for other targets other then OpenCL.
-  if (!ST.isOpenCLEnv())
-    return;
-  // Add the min requirements for different OpenCL and SPIR-V versions.
-  addAvailableCaps({Capability::Addresses, Capability::Float16Buffer,
-                    Capability::Int16, Capability::Int8, Capability::Kernel,
-                    Capability::Linkage, Capability::Vector16,
-                    Capability::Groups, Capability::GenericPointer,
-                    Capability::Shader});
-  if (ST.hasOpenCLFullProfile())
-    addAvailableCaps({Capability::Int64, Capability::Int64Atomics});
-  if (ST.hasOpenCLImageSupport()) {
-    addAvailableCaps({Capability::ImageBasic, Capability::LiteralSampler,
-                      Capability::Image1D, Capability::SampledBuffer,
-                      Capability::ImageBuffer});
-    if (ST.isAtLeastOpenCLVer(20))
-      addAvailableCaps({Capability::ImageReadWrite});
-  }
-  if (ST.isAtLeastSPIRVVer(11) && ST.isAtLeastOpenCLVer(22))
-    addAvailableCaps({Capability::SubgroupDispatch, Capability::PipeStorage});
-  if (ST.isAtLeastSPIRVVer(13))
-    addAvailableCaps({Capability::GroupNonUniform,
-                      Capability::GroupNonUniformVote,
-                      Capability::GroupNonUniformArithmetic,
-                      Capability::GroupNonUniformBallot,
-                      Capability::GroupNonUniformClustered,
-                      Capability::GroupNonUniformShuffle,
-                      Capability::GroupNonUniformShuffleRelative});
-  if (ST.isAtLeastSPIRVVer(14))
-    addAvailableCaps({Capability::DenormPreserve, Capability::DenormFlushToZero,
-                      Capability::SignedZeroInfNanPreserve,
-                      Capability::RoundingModeRTE,
-                      Capability::RoundingModeRTZ});
-  // TODO: verify if this needs some checks.
-  addAvailableCaps({Capability::Float16, Capability::Float64});
+  if (ST.isOpenCLEnv()) {
+    // Add the min requirements for different OpenCL and SPIR-V versions.
+    addAvailableCaps({Capability::Addresses, Capability::Float16Buffer,
+                      Capability::Int16, Capability::Int8, Capability::Kernel,
+                      Capability::Linkage, Capability::Vector16,
+                      Capability::Groups, Capability::GenericPointer,
+                      Capability::Shader});
+    if (ST.hasOpenCLFullProfile())
+      addAvailableCaps({Capability::Int64, Capability::Int64Atomics});
+    if (ST.hasOpenCLImageSupport()) {
+      addAvailableCaps({Capability::ImageBasic, Capability::LiteralSampler,
+                        Capability::Image1D, Capability::SampledBuffer,
+                        Capability::ImageBuffer});
+      if (ST.isAtLeastOpenCLVer(20))
+        addAvailableCaps({Capability::ImageReadWrite});
+    }
+    if (ST.isAtLeastSPIRVVer(11) && ST.isAtLeastOpenCLVer(22))
+      addAvailableCaps({Capability::SubgroupDispatch, Capability::PipeStorage});
+    if (ST.isAtLeastSPIRVVer(13))
+      addAvailableCaps({Capability::GroupNonUniform,
+                        Capability::GroupNonUniformVote,
+                        Capability::GroupNonUniformArithmetic,
+                        Capability::GroupNonUniformBallot,
+                        Capability::GroupNonUniformClustered,
+                        Capability::GroupNonUniformShuffle,
+                        Capability::GroupNonUniformShuffleRelative});
+    if (ST.isAtLeastSPIRVVer(14))
+      addAvailableCaps({Capability::DenormPreserve, Capability::DenormFlushToZero,
+                        Capability::SignedZeroInfNanPreserve,
+                        Capability::RoundingModeRTE,
+                        Capability::RoundingModeRTZ});
+    // TODO: verify if this needs some checks.
+    addAvailableCaps({Capability::Float16, Capability::Float64});
 
-  // TODO: add OpenCL extensions.
+    // TODO: add OpenCL extensions.
+  } else {
+    addAvailableCaps({Capability::Shader});
+  }
 }
 } // namespace SPIRV
 } // namespace llvm
@@ -853,6 +859,9 @@ void addInstrRequirements(const MachineInstr &MI,
 
 static void collectReqs(const Module &M, SPIRV::ModuleAnalysisInfo &MAI,
                         MachineModuleInfo *MMI, const SPIRVSubtarget &ST) {
+  if (!ST.isOpenCLEnv()) {
+      MAI.Reqs.addCapability(SPIRV::Capability::Shader);
+  }
   // Collect requirements for existing instructions.
   for (auto F = M.begin(), E = M.end(); F != E; ++F) {
     MachineFunction *MF = MMI->getMachineFunction(*F);
@@ -989,9 +998,13 @@ bool SPIRVModuleAnalysis::runOnModule(Module &M) {
   // Collect OpName, OpEntryPoint, OpDecorate etc, process other instructions.
   processOtherInstrs(M);
 
+  // FIXME: seems like opencl let you choose which function to call, so it's linked as library.
+  // for now hardcode to no linkage, but need to find out how to define entrypoint.
   // If there are no entry points, we need the Linkage capability.
+#if 0
   if (MAI.MS[SPIRV::MB_EntryPoints].empty())
     MAI.Reqs.addCapability(SPIRV::Capability::Linkage);
+#endif
 
   return false;
 }

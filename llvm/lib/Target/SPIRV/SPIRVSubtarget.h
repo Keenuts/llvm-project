@@ -72,13 +72,15 @@ public:
   // TODO: this environment is not implemented in Triple, we need to decide
   // how to standartize its support. For now, let's assume that we always
   // operate with OpenCL.
-  bool isOpenCLEnv() const { return true; }
+  bool isOpenCLEnv() const {
+    return getTargetTriple().getArch() != Triple::ArchType::spirv;
+  }
   uint32_t getSPIRVVersion() const { return SPIRVVersion; };
   bool isAtLeastSPIRVVer(uint32_t VerToCompareTo) const;
   bool isAtLeastOpenCLVer(uint32_t VerToCompareTo) const;
   // TODO: implement command line args or other ways to determine this.
-  bool hasOpenCLFullProfile() const { return true; }
-  bool hasOpenCLImageSupport() const { return true; }
+  bool hasOpenCLFullProfile() const { return isOpenCLEnv(); }
+  bool hasOpenCLImageSupport() const { return isOpenCLEnv(); }
   bool canUseExtension(SPIRV::Extension::Extension E) const;
   bool canUseExtInstSet(SPIRV::InstructionSet::InstructionSet E) const;
 

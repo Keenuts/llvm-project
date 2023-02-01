@@ -36,6 +36,9 @@ static unsigned computePointerSize(const Triple &TT) {
   const auto Arch = TT.getArch();
   // TODO: unify this with pointers legalization.
   assert(TT.isSPIRV());
+  if (Arch == Triple::spirv) {
+    return 1;
+  }
   return Arch == Triple::spirv32 ? 32 : 64;
 }
 
