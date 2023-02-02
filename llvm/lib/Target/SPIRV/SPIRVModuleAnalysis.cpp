@@ -998,13 +998,8 @@ bool SPIRVModuleAnalysis::runOnModule(Module &M) {
   // Collect OpName, OpEntryPoint, OpDecorate etc, process other instructions.
   processOtherInstrs(M);
 
-  // FIXME: seems like opencl let you choose which function to call, so it's linked as library.
-  // for now hardcode to no linkage, but need to find out how to define entrypoint.
-  // If there are no entry points, we need the Linkage capability.
-#if 0
   if (MAI.MS[SPIRV::MB_EntryPoints].empty())
     MAI.Reqs.addCapability(SPIRV::Capability::Linkage);
-#endif
 
   return false;
 }

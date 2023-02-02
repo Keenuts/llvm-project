@@ -213,6 +213,31 @@ static Type *getArgType(const Function &F, unsigned ArgIdx) {
              : StructType::create(F.getContext(), KernelArgTypeStr);
 }
 
+namespace {
+bool isEntrypointDefinition(const llvm::Function& function) {
+  const AttributeSet& set = function.getAttributes().getFnAttrs();
+  for (const auto& attr : set) {
+    if (!attr.isValid())
+      continue;
+
+    if (!attr.isStringAttribute())
+      continue;
+
+    if (attr.getKindAsString() == "hlsl.numthreads")
+      return true;
+  }
+  return false;
+}
+
+SPIRV::ExecutionModel::ExecutionModel getExecutionModelForEntrypoint(const llvm::Function& function) {
+  if (function.getCallingConv() == CallingConv::SPIR_KERNEL) {
+    return SPIRV::ExecutionModel::Kernel;
+  }
+  // FIXME: use the attribute to determine correct execution model.
+  return llvm::SPIRV::ExecutionModel::GLCompute;
+}
+} // namespace
+
 bool SPIRVCallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
                                              const Function &F,
                                              ArrayRef<ArrayRef<Register>> VRegs,
@@ -335,14 +360,18 @@ bool SPIRVCallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
   if (F.hasName())
     buildOpName(FuncVReg, F.getName(), MIRBuilder);
 
+  MachineFunction &MF = MIRBuilder.getMF();
+  const auto *ST = static_cast<const SPIRVSubtarget *>(&MF.getSubtarget());
   // Handle entry points and function linkage.
-  if (F.getCallingConv() == CallingConv::SPIR_KERNEL) {
+  if (isEntrypointDefinition(F)) {
+    const auto execution_model = getExecutionModelForEntrypoint(F);
     auto MIB = MIRBuilder.buildInstr(SPIRV::OpEntryPoint)
-                   .addImm(static_cast<uint32_t>(SPIRV::ExecutionModel::Kernel))
+                   .addImm(static_cast<uint32_t>(execution_model))
                    .addUse(FuncVReg);
     addStringImm(F.getName(), MIB);
-  } else if (F.getLinkage() == GlobalValue::LinkageTypes::ExternalLinkage ||
-             F.getLinkage() == GlobalValue::LinkOnceODRLinkage) {
+  } else if (ST->isOpenCLEnv() &&
+             (F.getLinkage() == GlobalValue::LinkageTypes::ExternalLinkage ||
+              F.getLinkage() == GlobalValue::LinkOnceODRLinkage)) {
     auto LnkTy = F.isDeclaration() ? SPIRV::LinkageType::Import
                                    : SPIRV::LinkageType::Export;
     buildOpDecorate(FuncVReg, MIRBuilder, SPIRV::Decoration::LinkageAttributes,

@@ -263,6 +263,9 @@ void SPIRVAsmPrinter::outputDebugSourceAndStrings(const Module &M) {
 }
 
 void SPIRVAsmPrinter::outputOpExtInstImports(const Module &M) {
+  if (!ST->isOpenCLEnv()) {
+    return;
+  }
   for (auto &CU : MAI->ExtInstSetMap) {
     unsigned Set = CU.first;
     Register Reg = CU.second;
@@ -447,7 +450,8 @@ void SPIRVAsmPrinter::outputExecutionMode(const Module &M) {
       Inst.addOperand(MCOperand::createImm(TypeCode));
       outputMCInst(Inst);
     }
-    if (!M.getNamedMetadata("spirv.ExecutionMode") &&
+    if (ST->isOpenCLEnv() &&
+        !M.getNamedMetadata("spirv.ExecutionMode") &&
         !M.getNamedMetadata("opencl.enable.FP_CONTRACT")) {
       MCInst Inst;
       Inst.setOpcode(SPIRV::OpExecutionMode);
