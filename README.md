@@ -1,3 +1,11 @@
+cmake -Hllvm -GNinja -Bbuild -DCMAKE_BUILD_TYPE=Debug -DLLVM_ENABLE_PROJECTS=clang -DLLVM_TARGETS_TO_BUILD="X86;AMDGPU" -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=SPIRV -DLLVM_OPTIMIZED_TABLEGEN=1 -DLLVM_ENABLE_LLD=1 -DLLVM_USE_SPLIT_DWARF=1 -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_INSTALL_PREFIX=build/install
+
+./build/bin/clang -cc1 -triple spirv-pc-shadermodel6.0-compute -x hlsl -emit-llvm compute.hlsl
+./build/bin/llc --mtriple=spirv1.5 compute.ll -o compute.spv
+
+
+
+
 # The LLVM Compiler Infrastructure
 
 Welcome to the LLVM project!
