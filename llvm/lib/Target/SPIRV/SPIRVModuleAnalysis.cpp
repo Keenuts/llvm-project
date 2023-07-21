@@ -522,6 +522,7 @@ namespace SPIRV {
 void RequirementHandler::initAvailableCapabilities(const SPIRVSubtarget &ST) {
   // TODO: Implemented for other targets other then OpenCL.
   if (ST.isOpenCLEnv()) {
+    LLVM_DEBUG(dbgs() << "TOTO: opencl branch!");
     // Add the min requirements for different OpenCL and SPIR-V versions.
     addAvailableCaps({Capability::Addresses, Capability::Float16Buffer,
                       Capability::Int16, Capability::Int8, Capability::Kernel,
@@ -557,6 +558,7 @@ void RequirementHandler::initAvailableCapabilities(const SPIRVSubtarget &ST) {
 
     // TODO: add OpenCL extensions.
   } else {
+    LLVM_DEBUG(dbgs() << "TOTO: shader branch!");
     addAvailableCaps({Capability::Shader});
   }
 }
