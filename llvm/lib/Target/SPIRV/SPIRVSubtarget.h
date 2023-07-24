@@ -24,6 +24,7 @@
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Triple.h"
 
 #define GET_SUBTARGETINFO_HEADER
 #include "SPIRVGenSubtargetInfo.inc"
@@ -45,6 +46,7 @@ private:
   SPIRVInstrInfo InstrInfo;
   SPIRVFrameLowering FrameLowering;
   SPIRVTargetLowering TLInfo;
+  Triple TargetTriple;
 
   // GlobalISel related APIs.
   std::unique_ptr<CallLowering> CallLoweringInfo;
@@ -72,7 +74,10 @@ public:
   // TODO: this environment is not implemented in Triple, we need to decide
   // how to standartize its support. For now, let's assume that we always
   // operate with OpenCL.
-  bool isOpenCLEnv() const { return true; }
+  bool isOpenCLEnv() const { return TargetTriple.getOS() != Triple::ShaderModel; }
+  // TODO: maybe Vulkan should be considered a vendor in the triple? For now we assume
+  // HLSL->SPIR-V is Vulkan, so ShaderModel + SPIR-V = Vulkan.
+  bool isVulkanEnv() const { return TargetTriple.getOS() == Triple::ShaderModel; }
   uint32_t getSPIRVVersion() const { return SPIRVVersion; };
   bool isAtLeastSPIRVVer(uint32_t VerToCompareTo) const;
   bool isAtLeastOpenCLVer(uint32_t VerToCompareTo) const;

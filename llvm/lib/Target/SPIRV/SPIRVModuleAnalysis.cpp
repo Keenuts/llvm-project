@@ -106,11 +106,17 @@ void SPIRVModuleAnalysis::setBaseInfo(const Module &M) {
     MAI.Mem =
         static_cast<SPIRV::MemoryModel::MemoryModel>(getMetadataUInt(MemMD, 1));
   } else {
-    MAI.Mem = SPIRV::MemoryModel::OpenCL;
-    unsigned PtrSize = ST->getPointerSize();
-    MAI.Addr = PtrSize == 32   ? SPIRV::AddressingModel::Physical32
-               : PtrSize == 64 ? SPIRV::AddressingModel::Physical64
-                               : SPIRV::AddressingModel::Logical;
+    // TODO: Add support for VulkanMemoryModel.
+    MAI.Mem = ST->isOpenCLEnv() ? SPIRV::MemoryModel::OpenCL : SPIRV::MemoryModel::GLSL450;
+    if (MAI.Mem == SPIRV::MemoryModel::OpenCL) {
+      unsigned PtrSize = ST->getPointerSize();
+      MAI.Addr = PtrSize == 32   ? SPIRV::AddressingModel::Physical32
+                 : PtrSize == 64 ? SPIRV::AddressingModel::Physical64
+                                 : SPIRV::AddressingModel::Logical;
+    } else {
+      // TODO: Add support for PhysicalStorageBufferAddress.
+      MAI.Addr = SPIRV::AddressingModel::Logical;
+    }
   }
   // Get the OpenCL version number from metadata.
   // TODO: support other source languages.
