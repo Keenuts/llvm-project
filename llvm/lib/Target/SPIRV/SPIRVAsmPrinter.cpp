@@ -447,7 +447,8 @@ void SPIRVAsmPrinter::outputExecutionMode(const Module &M) {
       Inst.addOperand(MCOperand::createImm(TypeCode));
       outputMCInst(Inst);
     }
-    if (!M.getNamedMetadata("spirv.ExecutionMode") &&
+
+    if (ST->isOpenCLEnv() && !M.getNamedMetadata("spirv.ExecutionMode") &&
         !M.getNamedMetadata("opencl.enable.FP_CONTRACT")) {
       MCInst Inst;
       Inst.setOpcode(SPIRV::OpExecutionMode);
@@ -542,4 +543,5 @@ bool SPIRVAsmPrinter::doInitialization(Module &M) {
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeSPIRVAsmPrinter() {
   RegisterAsmPrinter<SPIRVAsmPrinter> X(getTheSPIRV32Target());
   RegisterAsmPrinter<SPIRVAsmPrinter> Y(getTheSPIRV64Target());
+  RegisterAsmPrinter<SPIRVAsmPrinter> Z(getTheSPIRVLogicalTarget());
 }

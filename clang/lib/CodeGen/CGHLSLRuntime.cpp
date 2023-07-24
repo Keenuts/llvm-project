@@ -15,6 +15,7 @@
 #include "CGHLSLRuntime.h"
 #include "CGDebugInfo.h"
 #include "CodeGenModule.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/Decl.h"
 #include "clang/Basic/TargetOptions.h"
 #include "llvm/IR/IntrinsicsDirectX.h"
@@ -309,6 +310,29 @@ CGHLSLRuntime::BufferResBinding::BufferResBinding(
   }
 }
 
+void clang::CodeGen::CGHLSLRuntime::setHLSLEntryNumThreadsAttribute(
+    const HLSLNumThreadsAttr *attribute, llvm::Function *Fn) {
+
+  llvm::Module &M = CGM.getModule();
+  auto &Ctx = M.getContext();
+  Triple T(M.getTargetTriple());
+
+  if (T.isSPIRV()) {
+    IRBuilder<> Builder(M.getContext());
+    llvm::Metadata *AttrMDArgs[] = {
+        ConstantAsMetadata::get(Builder.getInt32(attribute->getX())),
+        ConstantAsMetadata::get(Builder.getInt32(attribute->getY())),
+        ConstantAsMetadata::get(Builder.getInt32(attribute->getZ()))};
+    Fn->setMetadata("reqd_work_group_size", llvm::MDNode::get(Ctx, AttrMDArgs));
+    return;
+  }
+
+  const StringRef NumThreadsKindStr = "hlsl.numthreads";
+  std::string NumThreadsStr = formatv("{0},{1},{2}", attribute->getX(),
+                                      attribute->getY(), attribute->getZ());
+  Fn->addFnAttr(NumThreadsKindStr, NumThreadsStr);
+}
+
 void clang::CodeGen::CGHLSLRuntime::setHLSLEntryAttributes(
     const FunctionDecl *FD, llvm::Function *Fn) {
   const auto *ShaderAttr = FD->getAttr<HLSLShaderAttr>();
@@ -316,12 +340,9 @@ void clang::CodeGen::CGHLSLRuntime::setHLSLEntryAttributes(
   const StringRef ShaderAttrKindStr = "hlsl.shader";
   Fn->addFnAttr(ShaderAttrKindStr,
                 ShaderAttr->ConvertShaderTypeToStr(ShaderAttr->getType()));
+
   if (HLSLNumThreadsAttr *NumThreadsAttr = FD->getAttr<HLSLNumThreadsAttr>()) {
-    const StringRef NumThreadsKindStr = "hlsl.numthreads";
-    std::string NumThreadsStr =
-        formatv("{0},{1},{2}", NumThreadsAttr->getX(), NumThreadsAttr->getY(),
-                NumThreadsAttr->getZ());
-    Fn->addFnAttr(NumThreadsKindStr, NumThreadsStr);
+    setHLSLEntryNumThreadsAttribute(NumThreadsAttr, Fn);
   }
 }
 
