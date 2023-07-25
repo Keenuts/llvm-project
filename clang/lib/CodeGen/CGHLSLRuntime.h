@@ -18,6 +18,7 @@
 #include "llvm/IR/IRBuilder.h"
 
 #include "clang/Basic/HLSLRuntime.h"
+#include "clang/AST/Attr.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -83,6 +84,7 @@ public:
   void addBuffer(const HLSLBufferDecl *D);
   void finishCodeGen();
 
+  void setHLSLEntryNumThreadsAttribute(const HLSLNumThreadsAttr *attribute, llvm::Function *Fn);
   void setHLSLEntryAttributes(const FunctionDecl *FD, llvm::Function *Fn);
 
   void emitEntryFunction(const FunctionDecl *FD, llvm::Function *Fn);

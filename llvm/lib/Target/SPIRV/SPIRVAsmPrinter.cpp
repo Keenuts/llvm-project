@@ -447,7 +447,9 @@ void SPIRVAsmPrinter::outputExecutionMode(const Module &M) {
       Inst.addOperand(MCOperand::createImm(TypeCode));
       outputMCInst(Inst);
     }
-    if (!M.getNamedMetadata("spirv.ExecutionMode") &&
+
+    if (ST->isOpenCLEnv() &&
+        !M.getNamedMetadata("spirv.ExecutionMode") &&
         !M.getNamedMetadata("opencl.enable.FP_CONTRACT")) {
       MCInst Inst;
       Inst.setOpcode(SPIRV::OpExecutionMode);
