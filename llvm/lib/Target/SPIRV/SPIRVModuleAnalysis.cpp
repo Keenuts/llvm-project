@@ -154,9 +154,11 @@ void SPIRVModuleAnalysis::setBaseInfo(const Module &M) {
   MAI.Reqs.getAndAddRequirements(SPIRV::OperandCategory::AddressingModelOperand,
                                  MAI.Addr, *ST);
 
-  // TODO: check if it's required by default.
-  MAI.ExtInstSetMap[static_cast<unsigned>(SPIRV::InstructionSet::OpenCL_std)] =
-      Register::index2VirtReg(MAI.getNextID());
+  if (ST->isOpenCLEnv()) {
+    // TODO: check if it's required by default.
+    MAI.ExtInstSetMap[static_cast<unsigned>(SPIRV::InstructionSet::OpenCL_std)] =
+        Register::index2VirtReg(MAI.getNextID());
+  }
 }
 
 // Collect MI which defines the register in the given machine function.
