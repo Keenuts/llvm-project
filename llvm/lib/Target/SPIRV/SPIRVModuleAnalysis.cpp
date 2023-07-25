@@ -522,9 +522,20 @@ void SPIRV::RequirementHandler::addAvailableCaps(const CapabilityList &ToAdd) {
 namespace llvm {
 namespace SPIRV {
 void RequirementHandler::initAvailableCapabilities(const SPIRVSubtarget &ST) {
-  // TODO: Implemented for other targets other then OpenCL.
-  if (!ST.isOpenCLEnv())
+  if (ST.isOpenCLEnv()) {
+    initAvailableCapabilitiesForOpenCL(ST);
     return;
+  }
+
+  if (ST.isVulkanEnv()) {
+    initAvailableCapabilitiesForVulkan(ST);
+    return;
+  }
+
+  report_fatal_error("Unimplemented environment for SPIR-V generation.");
+}
+
+void RequirementHandler::initAvailableCapabilitiesForOpenCL(const SPIRVSubtarget &ST) {
   // Add the min requirements for different OpenCL and SPIR-V versions.
   addAvailableCaps({Capability::Addresses, Capability::Float16Buffer,
                     Capability::Int16, Capability::Int8, Capability::Kernel,
@@ -560,6 +571,11 @@ void RequirementHandler::initAvailableCapabilities(const SPIRVSubtarget &ST) {
 
   // TODO: add OpenCL extensions.
 }
+
+void RequirementHandler::initAvailableCapabilitiesForVulkan(const SPIRVSubtarget &ST) {
+  addAvailableCaps({Capability::Shader});
+}
+
 } // namespace SPIRV
 } // namespace llvm
 
