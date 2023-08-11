@@ -7,4 +7,3 @@
 ;; Ensure one, and only one, OpMemoryModel is defined.
 ; CHECK:     OpMemoryModel Logical GLSL450
 ; CHECK-NOT: OpMemoryModel
-

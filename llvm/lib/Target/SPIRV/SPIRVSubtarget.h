@@ -72,7 +72,7 @@ public:
   unsigned getPointerSize() const { return PointerSize; }
   bool canDirectlyComparePointers() const;
   // TODO: this environment is not implemented in Triple, we need to decide
-  // how to standartize its support. For now, let's assume SPIR-V with physical
+  // how to standardize its support. For now, let's assume SPIR-V with physical
   // addressing is OpenCL, and Logical addressing is Vulkan.
   bool isOpenCLEnv() const {
     return TargetTriple.getArch() == Triple::spirv32 ||
