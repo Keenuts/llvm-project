@@ -914,15 +914,23 @@ static void collectReqs(const Module &M, SPIRV::ModuleAnalysisInfo &MAI,
     const Function &F = *FI;
     if (F.isDeclaration())
       continue;
-    if (F.getMetadata("reqd_work_group_size"))
+
+    if (F.getMetadata("reqd_work_group_size") &&
+        F.getFnAttribute("hlsl.numthreads").isValid()) {
+      report_fatal_error("Invalid IR: 'reqd_work_group_size' and "
+                         "'hlsl.numthreads' cannot be present together.");
+    }
+
+    if (F.getMetadata("reqd_work_group_size")) {
       MAI.Reqs.getAndAddRequirements(
           SPIRV::OperandCategory::ExecutionModeOperand,
           SPIRV::ExecutionMode::LocalSize, ST);
-    if (F.getFnAttribute("hlsl.numthreads").isValid()) {
+    } else if (F.getFnAttribute("hlsl.numthreads").isValid()) {
       MAI.Reqs.getAndAddRequirements(
           SPIRV::OperandCategory::ExecutionModeOperand,
           SPIRV::ExecutionMode::LocalSize, ST);
     }
+
     if (F.getMetadata("work_group_size_hint"))
       MAI.Reqs.getAndAddRequirements(
           SPIRV::OperandCategory::ExecutionModeOperand,
