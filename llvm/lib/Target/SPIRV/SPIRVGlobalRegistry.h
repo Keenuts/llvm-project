@@ -23,6 +23,7 @@
 
 namespace llvm {
 using SPIRVType = const MachineInstr;
+class SPIRVSubtarget;
 
 class SPIRVGlobalRegistry {
   // Registers holding values which have types associated with them.
@@ -48,6 +49,7 @@ class SPIRVGlobalRegistry {
 
   // Number of bits pointers and size_t integers require.
   const unsigned PointerSize;
+  const SPIRVSubtarget &STI;
 
   // Add a new OpTypeXXX instruction without checking for duplicates.
   SPIRVType *createSPIRVType(const Type *Type, MachineIRBuilder &MIRBuilder,
@@ -64,7 +66,7 @@ class SPIRVGlobalRegistry {
                         bool EmitIR);
 
 public:
-  SPIRVGlobalRegistry(unsigned PointerSize);
+  SPIRVGlobalRegistry(unsigned PointerSize, const SPIRVSubtarget &STI);
 
   MachineFunction *CurMF;
 

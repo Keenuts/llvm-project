@@ -22,8 +22,8 @@
 #include "SPIRVUtils.h"
 
 using namespace llvm;
-SPIRVGlobalRegistry::SPIRVGlobalRegistry(unsigned PointerSize)
-    : PointerSize(PointerSize) {}
+SPIRVGlobalRegistry::SPIRVGlobalRegistry(unsigned PointerSize, const SPIRVSubtarget &STI)
+    : PointerSize(PointerSize), STI(STI) {}
 
 SPIRVType *SPIRVGlobalRegistry::assignIntTypeToVReg(unsigned BitWidth,
                                                     Register VReg,
@@ -455,6 +455,7 @@ Register SPIRVGlobalRegistry::buildGlobalVariable(
     const MachineInstr *Init, bool IsConst, bool HasLinkageTy,
     SPIRV::LinkageType::LinkageType LinkageType, MachineIRBuilder &MIRBuilder,
     bool IsInstSelector) {
+
   const GlobalVariable *GVar = nullptr;
   if (GV)
     GVar = cast<const GlobalVariable>(GV);
@@ -511,9 +512,10 @@ Register SPIRVGlobalRegistry::buildGlobalVariable(
   if (GVar && GVar->hasName())
     buildOpName(Reg, GVar->getName(), MIRBuilder);
 
+  // FIXME: this is not compatible with Graphics SPIR-V (Kernel capability).
   // Output decorations for the GV.
   // TODO: maybe move to GenerateDecorations pass.
-  if (IsConst)
+  if (IsConst && STI.isOpenCLEnv())
     buildOpDecorate(Reg, MIRBuilder, SPIRV::Decoration::Constant, {});
 
   if (GVar && GVar->getAlign().valueOrOne().value() != 1) {

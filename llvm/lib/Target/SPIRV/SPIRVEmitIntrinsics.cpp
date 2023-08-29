@@ -58,6 +58,17 @@ class SPIRVEmitIntrinsics
   void preprocessCompositeConstants();
   void preprocessUndefs();
   CallInst *buildIntrWithMD(Intrinsic::ID IntrID, ArrayRef<Type *> Types,
+                            Value *Arg, Value *Arg2, Value *Arg3) {
+    ConstantAsMetadata *CM = ValueAsMetadata::getConstant(Arg);
+    MDTuple *TyMD = MDNode::get(F->getContext(), CM);
+    MetadataAsValue *VMD = MetadataAsValue::get(F->getContext(), TyMD);
+
+    ConstantAsMetadata *CM2 = ValueAsMetadata::getConstant(Arg3);
+    MDTuple *TyMD2 = MDNode::get(F->getContext(), CM2);
+    MetadataAsValue *VMD2 = MetadataAsValue::get(F->getContext(), TyMD2);
+    return IRB->CreateIntrinsic(IntrID, {Types}, { Arg2, VMD, VMD2 });
+  }
+  CallInst *buildIntrWithMD(Intrinsic::ID IntrID, ArrayRef<Type *> Types,
                             Value *Arg, Value *Arg2) {
     ConstantAsMetadata *CM = ValueAsMetadata::getConstant(Arg);
     MDTuple *TyMD = MDNode::get(F->getContext(), CM);
@@ -388,6 +399,29 @@ void SPIRVEmitIntrinsics::processGlobalValue(GlobalVariable &GV) {
     IRB->CreateIntrinsic(Intrinsic::spv_unref_global, GV.getType(), &GV);
 }
 
+static Type* findPointerType(Module *M, Type *t) {
+  for (auto& F : *M) {
+    for (auto& BB : F) {
+      for (auto& I : BB) {
+        if (I.getOpcode() == Instruction::Load) {
+          auto *src = dyn_cast<Instruction>(I.getOperand(0));
+          if (auto *GEP = dyn_cast<GetElementPtrInst>(src)) {
+            if (GEP->getPointerOperandType() == t) {
+              return I.getType();
+            }
+          } else if (src) {
+            return src->getType();
+          }
+        }
+        //else if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
+
+        //}
+      }
+    }
+  }
+  return nullptr;
+}
+
 void SPIRVEmitIntrinsics::insertAssignPtrTypeIntrs(Instruction *I) {
   if (I->getType()->isVoidTy() || !requireAssignType(I))
     return;
@@ -395,12 +429,23 @@ void SPIRVEmitIntrinsics::insertAssignPtrTypeIntrs(Instruction *I) {
   setInsertPointSkippingPhis(*IRB, I->getNextNode());
   if (auto *AI = dyn_cast<AllocaInst>(I)) {
     Constant *Const = Constant::getNullValue(AI->getAllocatedType());
-    buildIntrWithMD(Intrinsic::spv_assign_ptr_type, {I->getType()}, Const, I);
+    buildIntrWithMD(Intrinsic::spv_assign_ptr_type, { I->getType() }, Const, I, Constant::getNullValue(I->getType()));
+  } else if (I->getType()->isPointerTy()) {
+    Type *loadedType = findPointerType(I->getModule(), I->getType());
+    Constant *Const = Constant::getNullValue(loadedType);
+    buildIntrWithMD(Intrinsic::spv_assign_ptr_type, { I->getType() }, Const, I, Constant::getNullValue(I->getType()));
+    //buildIntrWithMD(Intrinsic::spv_track_constant , {Op->getType(), Op->getType()}, Op, Op);
   }
 }
 
 void SPIRVEmitIntrinsics::insertAssignTypeIntrs(Instruction *I) {
   Type *Ty = I->getType();
+  if (Ty->isPointerTy()) {
+    return insertAssignPtrTypeIntrs(I);
+    //Type *tmp = findPointerType(I->getModule(), Ty);
+    //Ty = tmp != nullptr ? tmp : Ty;
+  }
+
   if (!Ty->isVoidTy() && requireAssignType(I) &&
       I->getOpcode() != Instruction::Alloca) {
     setInsertPointSkippingPhis(*IRB, I->getNextNode());
@@ -414,8 +459,13 @@ void SPIRVEmitIntrinsics::insertAssignTypeIntrs(Instruction *I) {
       }
     }
     Constant *Const = Constant::getNullValue(TypeToAssign);
+    //  TODO: TOTO: figure out what this is. How does it work?
+    //  Also, seems like I'm saying assign the type 'float' to a pointer (GEP result).
+    //  So this seems wrong. But I cannot say "assign float*"? Maybe I could add this as metadata,
+    //  and use it later in the backend?.
     buildIntrWithMD(Intrinsic::spv_assign_type, {Ty}, Const, I);
   }
+
   for (const auto &Op : I->operands()) {
     if (isa<ConstantPointerNull>(Op) || isa<UndefValue>(Op) ||
         // Check GetElementPtrConstantExpr case.

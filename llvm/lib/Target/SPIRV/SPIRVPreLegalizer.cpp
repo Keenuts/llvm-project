@@ -245,10 +245,17 @@ static void generateAssignInstrs(MachineFunction &MF, SPIRVGlobalRegistry *GR,
       if (isSpvIntrinsic(MI, Intrinsic::spv_assign_ptr_type)) {
         Register Reg = MI.getOperand(1).getReg();
         MIB.setInsertPt(*MI.getParent(), MI.getIterator());
+
+        // Pointee type.
         SPIRVType *BaseTy = GR->getOrCreateSPIRVType(
             getMDOperandAsType(MI.getOperand(2).getMetadata(), 0), MIB);
+        // Pointer type.
+        PointerType *PointerTy = dyn_cast<PointerType>(getMDOperandAsType(MI.getOperand(3).getMetadata(), 0));
+        assert(PointerTy != nullptr);
+        auto SC = addressSpaceToStorageClass(PointerTy->getAddressSpace());
+
         SPIRVType *AssignedPtrType = GR->getOrCreateSPIRVPointerType(
-            BaseTy, MI, *MF.getSubtarget<SPIRVSubtarget>().getInstrInfo());
+            BaseTy, MI, *MF.getSubtarget<SPIRVSubtarget>().getInstrInfo(), SC);
         MachineInstr *Def = MRI.getVRegDef(Reg);
         assert(Def && "Expecting an instruction that defines the register");
         insertAssignInstr(Reg, nullptr, AssignedPtrType, GR, MIB,
@@ -260,8 +267,11 @@ static void generateAssignInstrs(MachineFunction &MF, SPIRVGlobalRegistry *GR,
         MachineInstr *Def = MRI.getVRegDef(Reg);
         assert(Def && "Expecting an instruction that defines the register");
         // G_GLOBAL_VALUE already has type info.
-        if (Def->getOpcode() != TargetOpcode::G_GLOBAL_VALUE)
+        if (Def->getOpcode() != TargetOpcode::G_GLOBAL_VALUE) {
+          //Type *Ty = getMDOperandAsType(MI.getOperand(2).getMetadata(), 0);
+          //FIXME: toto
           insertAssignInstr(Reg, Ty, nullptr, GR, MIB, MF.getRegInfo());
+        }
         ToErase.push_back(&MI);
       } else if (MI.getOpcode() == TargetOpcode::G_CONSTANT ||
                  MI.getOpcode() == TargetOpcode::G_FCONSTANT ||

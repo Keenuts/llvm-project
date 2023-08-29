@@ -356,8 +356,8 @@ static Register buildBuiltinVariableLoad(MachineIRBuilder &MIRBuilder,
   // Set up the global OpVariable with the necessary builtin decorations.
   Register Variable = GR->buildGlobalVariable(
       NewRegister, PtrType, getLinkStringForBuiltIn(BuiltinValue), nullptr,
-      SPIRV::StorageClass::Input, nullptr, true, true,
-      SPIRV::LinkageType::Import, MIRBuilder, false);
+      SPIRV::StorageClass::Input, nullptr, /* IsConst= */ true, /* HasLinkageTy= */ true,
+      SPIRV::LinkageType::Import, MIRBuilder, /* IsInstSelector=*/ false);
 
   // Load the value from the global variable.
   Register LoadedRegister =

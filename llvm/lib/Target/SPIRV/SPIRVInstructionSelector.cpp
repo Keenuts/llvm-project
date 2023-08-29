@@ -250,6 +250,7 @@ bool SPIRVInstructionSelector::select(MachineInstr &I) {
   bool HasDefs = I.getNumDefs() > 0;
   Register ResVReg = HasDefs ? I.getOperand(0).getReg() : Register(0);
   SPIRVType *ResType = HasDefs ? GR.getSPIRVTypeForVReg(ResVReg) : nullptr;
+
   assert(!HasDefs || ResType || I.getOpcode() == TargetOpcode::G_GLOBAL_VALUE);
   if (spvSelect(ResVReg, ResType, I)) {
     if (HasDefs) // Make all vregs 32 bits (for SPIR-V IDs).
@@ -1298,11 +1299,12 @@ bool SPIRVInstructionSelector::selectExtractElt(Register ResVReg,
 bool SPIRVInstructionSelector::selectGEP(Register ResVReg,
                                          const SPIRVType *ResType,
                                          MachineInstr &I) const {
+  unsigned Opcode = STI.isVulkanEnv() ? SPIRV::OpAccessChain
+                  : (I.getOperand(2).getImm() ? SPIRV::OpInBoundsPtrAccessChain : SPIRV::OpPtrAccessChain);
+
   // In general we should also support OpAccessChain instrs here (i.e. not
   // PtrAccessChain) but SPIRV-LLVM Translator doesn't emit them at all and so
   // do we to stay compliant with its test and more importantly consumers.
-  unsigned Opcode = I.getOperand(2).getImm() ? SPIRV::OpInBoundsPtrAccessChain
-                                             : SPIRV::OpPtrAccessChain;
   auto Res = BuildMI(*I.getParent(), I, I.getDebugLoc(), TII.get(Opcode))
                  .addDef(ResVReg)
                  .addUse(GR.getSPIRVTypeID(ResType))

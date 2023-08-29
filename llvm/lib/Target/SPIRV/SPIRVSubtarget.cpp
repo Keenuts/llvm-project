@@ -44,7 +44,7 @@ SPIRVSubtarget::SPIRVSubtarget(const Triple &TT, const std::string &CPU,
   initAvailableExtensions();
   initAvailableExtInstSets();
 
-  GR = std::make_unique<SPIRVGlobalRegistry>(PointerSize);
+  GR = std::make_unique<SPIRVGlobalRegistry>(PointerSize, *this);
   CallLoweringInfo = std::make_unique<SPIRVCallLowering>(TLInfo, GR.get());
   Legalizer = std::make_unique<SPIRVLegalizerInfo>(*this);
   RegBankInfo = std::make_unique<SPIRVRegisterBankInfo>();
