@@ -55,7 +55,9 @@ void SPIRVInstPrinter::printOpConstantVarOps(const MCInst *MI,
     Imm |= (MI->getOperand(StartIndex + 1).getImm() << 32);
     O << Imm;
   } else {
-    printRemainingVariableOps(MI, StartIndex, O, true, false);
+    // FIXME: Somehow this fails when printing a 64bit constant. It prints an additional 0 in my case, not
+    // sure why.
+    //printRemainingVariableOps(MI, StartIndex, O, true, false);
   }
 }
 

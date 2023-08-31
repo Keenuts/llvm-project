@@ -583,7 +583,13 @@ void RequirementHandler::initAvailableCapabilitiesForOpenCL(
 
 void RequirementHandler::initAvailableCapabilitiesForVulkan(
     const SPIRVSubtarget &ST) {
-  addAvailableCaps({Capability::Shader, Capability::Linkage, Capability::Int8, Capability::Float64});
+  addAvailableCaps({
+      Capability::Shader,
+      Capability::Linkage,
+      Capability::Int8,
+      Capability::Int64,
+      Capability::Float64,
+      SPIRV::Capability::PhysicalStorageBufferAddressesEXT});
 }
 
 } // namespace SPIRV
@@ -768,6 +774,9 @@ void addInstrRequirements(const MachineInstr &MI,
   case SPIRV::OpTypeForwardPointer:
     // TODO: check if it's OpenCL's kernel.
     Reqs.addCapability(SPIRV::Capability::Addresses);
+    break;
+  case SPIRV::OpConvertUToPtr:
+    Reqs.addCapability(SPIRV::Capability::PhysicalStorageBufferAddressesEXT);
     break;
   case SPIRV::OpAtomicFlagTestAndSet:
   case SPIRV::OpAtomicLoad:

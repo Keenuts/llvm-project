@@ -417,12 +417,17 @@ static Type* findPointerType(Module *M, Type *t) {
           }
 
         } else if (I.getOpcode() == Instruction::Store) {
+          auto *store = dyn_cast<StoreInst>(&I);
           auto *dst = I.getOperand(0);
           auto *src = I.getOperand(1);
 
           if (auto *GEP = dyn_cast<GetElementPtrInst>(src)) {
             if (GEP->getPointerOperandType() == t) {
               return dst->getType();
+            }
+          } else if (auto *Alloca = dyn_cast<AllocaInst>(src)) {
+            if (Alloca->getType() == t) {
+              return Alloca->getAllocatedType();
             }
           } else {
             assert(0 && "unhandled case.");
