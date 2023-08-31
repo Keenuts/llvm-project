@@ -52,6 +52,11 @@ void SPIRVMCInstLower::lower(const MachineInstr *MI, MCInst &OutMI,
         MCOp = MCOperand::createImm(MO.getImm());
       }
       break;
+    // FIXME: constant immediate are not supported. Need to properly do that.
+    // patching this in the meantime, but it breaks at instruction generation. Not sure why.
+    case MachineOperand::MO_CImmediate:
+      MCOp = MCOperand::createImm(MO.getCImm()->getZExtValue());
+      break;
     case MachineOperand::MO_FPImmediate:
       MCOp = MCOperand::createDFPImm(
           MO.getFPImm()->getValueAPF().convertToFloat());

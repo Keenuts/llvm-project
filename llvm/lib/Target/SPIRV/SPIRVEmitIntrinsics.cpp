@@ -399,26 +399,40 @@ void SPIRVEmitIntrinsics::processGlobalValue(GlobalVariable &GV) {
     IRB->CreateIntrinsic(Intrinsic::spv_unref_global, GV.getType(), &GV);
 }
 
+// FIXME: Maravelous code, I know, please don't submit me.
 static Type* findPointerType(Module *M, Type *t) {
   for (auto& F : *M) {
     for (auto& BB : F) {
       for (auto& I : BB) {
+
         if (I.getOpcode() == Instruction::Load) {
-          auto *src = dyn_cast<Instruction>(I.getOperand(0));
+          auto *src = I.getOperand(0);
+
           if (auto *GEP = dyn_cast<GetElementPtrInst>(src)) {
             if (GEP->getPointerOperandType() == t) {
               return I.getType();
             }
-          } else if (src) {
-            return src->getType();
+          } else {
+            assert(0 && "unhandled case for load instruction.");
+          }
+
+        } else if (I.getOpcode() == Instruction::Store) {
+          auto *dst = I.getOperand(0);
+          auto *src = I.getOperand(1);
+
+          if (auto *GEP = dyn_cast<GetElementPtrInst>(src)) {
+            if (GEP->getPointerOperandType() == t) {
+              return dst->getType();
+            }
+          } else {
+            assert(0 && "unhandled case.");
           }
         }
-        //else if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
-
-        //}
       }
     }
   }
+
+  assert(0 && "unhandled case.");
   return nullptr;
 }
 

@@ -523,9 +523,15 @@ Register SPIRVGlobalRegistry::buildGlobalVariable(
     buildOpDecorate(Reg, MIRBuilder, SPIRV::Decoration::Alignment, {Alignment});
   }
 
-  if (HasLinkageTy)
+  if (HasLinkageTy && STI.isOpenCLEnv()) {
     buildOpDecorate(Reg, MIRBuilder, SPIRV::Decoration::LinkageAttributes,
                     {static_cast<uint32_t>(LinkageType)}, Name);
+  } else {
+    // THis needs to be added properly.
+    buildOpDecorate(Reg, MIRBuilder, SPIRV::Decoration::DescriptorSet, {0});
+    buildOpDecorate(Reg, MIRBuilder, SPIRV::Decoration::Binding, {0});
+    // We also need to decorate the struct type with the block decoration, and the offset/stride decorations.
+  }
 
   SPIRV::BuiltIn::BuiltIn BuiltInId;
   if (getSpirvBuiltInIdByName(Name, BuiltInId))

@@ -1310,8 +1310,15 @@ bool SPIRVInstructionSelector::selectGEP(Register ResVReg,
                  .addUse(GR.getSPIRVTypeID(ResType))
                  // Object to get a pointer to.
                  .addUse(I.getOperand(3).getReg());
+
+  // FIXME: figure this out.
+  // When doing GEP, we take a pointer. Godbolt shows there is an initial 0 deref to break the pointer
+  // and reach the actual aggregate. But OpAccessChain doesn't require it. Not sure why OpInBoundsPtrAccessChain
+  // does. Maybe it's more equivalent to GEP? Need to understand the diff between those instructions, since
+  // as-is, it really feels like a bad hack.
+  const unsigned StartIndex = Opcode != SPIRV::OpAccessChain ? 4 : 5;
   // Adding indices.
-  for (unsigned i = 4; i < I.getNumExplicitOperands(); ++i)
+  for (unsigned i = StartIndex; i < I.getNumExplicitOperands(); ++i)
     Res.addUse(I.getOperand(i).getReg());
   return Res.constrainAllUses(TII, TRI, RBI);
 }

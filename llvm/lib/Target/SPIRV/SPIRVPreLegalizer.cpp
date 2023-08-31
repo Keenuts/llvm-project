@@ -161,12 +161,14 @@ static SPIRVType *propagateSPIRVType(MachineInstr *MI, SPIRVGlobalRegistry *GR,
         SpirvTy = GR->getOrCreateSPIRVType(Ty, MIB);
         break;
       }
-      case TargetOpcode::G_GLOBAL_VALUE: {
-        MIB.setInsertPt(*MI->getParent(), MI);
-        Type *Ty = MI->getOperand(1).getGlobal()->getType();
-        SpirvTy = GR->getOrCreateSPIRVType(Ty, MIB);
-        break;
-      }
+      // Global value are pointers? With opaque pointers, type needs to be derived
+      // from the load/store, so removing this for now.
+      //case TargetOpcode::G_GLOBAL_VALUE: {
+      //  MIB.setInsertPt(*MI->getParent(), MI);
+      //  Type *Ty = MI->getOperand(1).getGlobal()->getType();
+      //  SpirvTy = GR->getOrCreateSPIRVType(Ty, MIB);
+      //  break;
+      //}
       case TargetOpcode::G_TRUNC:
       case TargetOpcode::G_ADDRSPACE_CAST:
       case TargetOpcode::G_PTR_ADD:
