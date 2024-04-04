@@ -9,7 +9,7 @@
 define void @main() #1 {
   %1 = icmp ne i32 0, 0
   %t1 = call token @llvm.experimental.convergence.entry()
-  br i1 %1, label %l1, label %l2
+  br i1 %1, label %l1, label %l2_end
 
 ; CHECK:         %[[#main]] = OpFunction
 ; CHECK:        %[[#cond:]] = OpINotEqual %[[#bool]] %[[#uint_0]] %[[#uint_0]]
@@ -25,12 +25,13 @@ l1:
   %tl1 = call token @llvm.experimental.convergence.loop() [ "convergencectrl"(token %t1) ]
   br i1 %1, label %l1_body, label %l1_end
 ; CHECK-DAG:    %[[#l1_header]] = OpLabel
-; CHECK-NEXT:                     OpBranchConditional %[[#cond]] %[[#l1_body:]] %[[#l1_end:]]
+; CHECK-NEXT:                     OpLoopMerge %[[#l1_end:]] %[[#l1_continue:]] None
+; CHECK-NEXT:                     OpBranchConditional %[[#cond]] %[[#l1_body:]] %[[#l1_end]]
 
 l1_body:
   br label %l1_continue
 ; CHECK-DAG:   %[[#l1_body]] = OpLabel
-; CHECK-NEXT:                  OpBranch %[[#l1_continue:]]
+; CHECK-NEXT:                  OpBranch %[[#l1_continue]]
 
 l1_continue:
   br label %l1
@@ -42,24 +43,24 @@ l1_end:
   br label %end
 ; CHECK-DAG:   %[[#l1_end]] = OpLabel
 ; CHECK-DAG:         %[[#]] = OpLoad %[[#]] %[[#SubgroupLocalInvocationId]]
-; CHECK-NEXT:                 OpBranch %[[#end:]]
+; CHECK-NEXT:                 OpBranch %[[#end_new:]]
 
-l2:
-  %tl2 = call token @llvm.experimental.convergence.loop() [ "convergencectrl"(token %t1) ]
-  br i1 %1, label %l2_body, label %l2_end
-; CHECK-DAG:    %[[#l2_header]] = OpLabel
-; CHECK-NEXT:                     OpBranchConditional %[[#cond]] %[[#l2_body:]] %[[#l2_end:]]
-
-l2_body:
-  br label %l2_continue
-; CHECK-DAG:   %[[#l2_body]] = OpLabel
-; CHECK-NEXT:                  OpBranch %[[#l2_continue:]]
-
-l2_continue:
-  br label %l2
-; CHECK-DAG:   %[[#l2_continue]] = OpLabel
-; CHECK-NEXT:                      OpBranch %[[#l2_header]]
-
+;l2:
+;  br i1 %1, label %l2_body, label %l2_end
+;; CHECK-DAG:    %[[#l2_header]] = OpLabel
+;; CHECK-NEXT:                     OpLoopMerge %[[#l2_end:]] %[[#l2_continue:]] None
+;; CHECK-NEXT:                     OpBranchConditional %[[#cond]] %[[#l2_body:]] %[[#l2_end]]
+;
+;l2_body:
+;  br label %l2_continue
+;; CHECK-DAG:   %[[#l2_body]] = OpLabel
+;; CHECK-NEXT:                  OpBranch %[[#l2_continue]]
+;
+;l2_continue:
+;  br label %l2
+;; CHECK-DAG:   %[[#l2_continue]] = OpLabel
+;; CHECK-NEXT:                      OpBranch %[[#l2_header]]
+;
 l2_end:
   br label %end
 ; CHECK-DAG:   %[[#l2_end]] = OpLabel

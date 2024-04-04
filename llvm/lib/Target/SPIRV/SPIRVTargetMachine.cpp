@@ -164,12 +164,12 @@ void SPIRVPassConfig::addIRPasses() {
     //  - all loop exits are dominated by the loop pre-header.
     //  - loops have a single back-edge.
     addPass(createLoopSimplifyPass());
+    addPass(createSPIRVSplitRegionExitBlocksPass());
   }
 
   TargetPassConfig::addIRPasses();
   addPass(createSPIRVRegularizerPass());
   addPass(createSPIRVPrepareFunctionsPass(TM));
-  addPass(createSPIRVStripConvergenceIntrinsicsPass());
 }
 
 void SPIRVPassConfig::addISelPrepare() {
@@ -188,6 +188,9 @@ void SPIRVPassConfig::addPreLegalizeMachineIR() {
 
 // Use the default legalizer.
 bool SPIRVPassConfig::addLegalizeMachineIR() {
+  if (TM.getSubtargetImpl()->isVulkanEnv()) {
+    addPass(createSPIRVStructurizerPass());
+  }
   addPass(new Legalizer());
   addPass(createSPIRVPostLegalizerPass());
   return false;

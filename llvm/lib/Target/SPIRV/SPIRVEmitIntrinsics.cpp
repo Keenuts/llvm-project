@@ -150,6 +150,16 @@ public:
     ModulePass::getAnalysisUsage(AU);
   }
 };
+
+bool isConvergenceIntrinsic(const Instruction *I) {
+  const auto *II = dyn_cast<IntrinsicInst>(I);
+  if (!II)
+    return false;
+
+  return II->getIntrinsicID() == Intrinsic::experimental_convergence_entry ||
+         II->getIntrinsicID() == Intrinsic::experimental_convergence_loop ||
+         II->getIntrinsicID() == Intrinsic::experimental_convergence_anchor;
+}
 } // namespace
 
 char SPIRVEmitIntrinsics::ID = 0;
@@ -1067,6 +1077,8 @@ void SPIRVEmitIntrinsics::processGlobalValue(GlobalVariable &GV,
 
 void SPIRVEmitIntrinsics::insertAssignPtrTypeIntrs(Instruction *I,
                                                    IRBuilder<> &B) {
+  if (isConvergenceIntrinsic(I))
+    return;
   reportFatalOnTokenType(I);
   if (!isPointerTy(I->getType()) || !requireAssignType(I) ||
       isa<BitCastInst>(I))
@@ -1085,6 +1097,8 @@ void SPIRVEmitIntrinsics::insertAssignPtrTypeIntrs(Instruction *I,
 
 void SPIRVEmitIntrinsics::insertAssignTypeIntrs(Instruction *I,
                                                 IRBuilder<> &B) {
+  if (isConvergenceIntrinsic(I))
+    return;
   reportFatalOnTokenType(I);
   Type *Ty = I->getType();
   if (!Ty->isVoidTy() && !isPointerTy(Ty) && requireAssignType(I)) {
@@ -1312,6 +1326,10 @@ bool SPIRVEmitIntrinsics::runOnFunction(Function &Func) {
     I = visit(*I);
     if (!I)
       continue;
+
+    if (isConvergenceIntrinsic(I))
+      continue;
+
     processInstrAfterVisit(I, B);
   }
 
