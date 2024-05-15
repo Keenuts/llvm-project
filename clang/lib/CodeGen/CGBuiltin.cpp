@@ -18662,6 +18662,11 @@ case Builtin::BI__builtin_hlsl_elementwise_isinf: {
         llvm::FunctionType::get(IntTy, {}, false), "__hlsl_wave_get_lane_index",
         {}, false, true));
   }
+  case Builtin::BI__builtin_hlsl_wave_is_first_lane: {
+    return EmitRuntimeCall(CGM.CreateRuntimeFunction(
+        llvm::FunctionType::get(IntTy, {}, false), "__hlsl_wave_is_first_lane",
+        {}, false, true));
+  }
   }
   return nullptr;
 }

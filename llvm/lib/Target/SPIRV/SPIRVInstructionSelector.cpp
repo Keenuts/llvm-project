@@ -1800,6 +1800,13 @@ bool SPIRVInstructionSelector::selectConst(Register ResVReg,
         .addUse(Reg)
         .constrainAllUses(TII, TRI, RBI);
   }
+  if (TyOpcode == SPIRV::OpTypeBool) {
+    assert(Imm.getBitWidth() == 1);
+    return BuildMI(BB, I, I.getDebugLoc(), TII.get(Imm.isZero() ? SPIRV::OpConstantFalse : SPIRV::OpConstantTrue))
+        .addDef(ResVReg)
+        .addUse(GR.getSPIRVTypeID(ResType))
+        .constrainAllUses(TII, TRI, RBI);
+  }
   auto MIB = BuildMI(BB, I, I.getDebugLoc(), TII.get(SPIRV::OpConstantI))
                  .addDef(ResVReg)
                  .addUse(GR.getSPIRVTypeID(ResType));
@@ -2046,6 +2053,17 @@ bool SPIRVInstructionSelector::selectIntrinsic(Register ResVReg,
       else
         llvm_unreachable("Unexpected OpSwitch operand");
     }
+    return MIB.constrainAllUses(TII, TRI, RBI);
+  }
+  case Intrinsic::spv_loop_merge:
+  case Intrinsic::spv_selection_merge: {
+    const auto Opcode = IID == Intrinsic::spv_selection_merge ? SPIRV::OpSelectionMerge : SPIRV::OpLoopMerge;
+    auto MIB = BuildMI(BB, I, I.getDebugLoc(), TII.get(Opcode));
+    for (unsigned i = 1; i < I.getNumExplicitOperands(); ++i) {
+      assert(I.getOperand(i).isMBB());
+      MIB.addMBB(I.getOperand(i).getMBB());
+    }
+    MIB.addImm(SPIRV::SelectionControl::None);
     return MIB.constrainAllUses(TII, TRI, RBI);
   }
   case Intrinsic::spv_cmpxchg:

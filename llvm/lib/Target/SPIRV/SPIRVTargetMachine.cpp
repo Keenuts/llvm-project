@@ -157,6 +157,8 @@ TargetPassConfig *SPIRVTargetMachine::createPassConfig(PassManagerBase &PM) {
 }
 
 void SPIRVPassConfig::addIRPasses() {
+  TargetPassConfig::addIRPasses();
+
   if (TM.getSubtargetImpl()->isVulkanEnv()) {
     // Once legalized, we need to structurize the CFG to follow the spec.
     // This is done through the following 8 steps.
@@ -173,12 +175,12 @@ void SPIRVPassConfig::addIRPasses() {
     // regions are single-entry, single-exit. This will help determine the
     // correct merge block.
     addPass(createSPIRVMergeRegionExitTargetsPass());
+
+    addPass(createSPIRVStructurizerPass());
   }
 
-  TargetPassConfig::addIRPasses();
   addPass(createSPIRVRegularizerPass());
   addPass(createSPIRVPrepareFunctionsPass(TM));
-  addPass(createSPIRVStripConvergenceIntrinsicsPass());
 }
 
 void SPIRVPassConfig::addISelPrepare() {

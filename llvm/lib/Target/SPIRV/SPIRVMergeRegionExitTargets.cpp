@@ -71,6 +71,8 @@ public:
 
   /// Create a value in BB set to the value associated with the branch the block
   /// terminator will take.
+  /// If the target of BB's terminator is not in TargetToValue, this means the target
+  /// is not outside of the current convergence region, hence we ignore it.
   llvm::Value *createExitVariable(
       BasicBlock *BB,
       const DenseMap<BasicBlock *, ConstantInt *> &TargetToValue) {
@@ -78,29 +80,58 @@ public:
     if (isa<ReturnInst>(T))
       return nullptr;
 
+    if (auto *BI = dyn_cast<BranchInst>(T)) {
+      // The only target must be in TargetToValue.
+      if (BI->isUnconditional()) {
+        return TargetToValue.at(BI->getSuccessor(0));
+      }
+
+      if (TargetToValue.count(BI->getSuccessor(0)) == 0)
+        return TargetToValue.at(BI->getSuccessor(1));
+      if (TargetToValue.count(BI->getSuccessor(1)) == 0)
+        return TargetToValue.at(BI->getSuccessor(0));
+
+      IRBuilder<> Builder(BB);
+      Builder.SetInsertPoint(T);
+      return Builder.CreateSelect(BI->getCondition(),
+          TargetToValue.at(BI->getSuccessor(0)),
+          TargetToValue.at(BI->getSuccessor(1)));
+    }
+
+    // This vector links each target to the value it requires.
+    // The first element's value can be null, as it represents the 'else' case.
+    std::vector<std::pair<Value *, BasicBlock *>> ConditionForTarget;
+    SwitchInst *SI = cast<SwitchInst>(T);
+
+    if (TargetToValue.count(SI->getDefaultDest()))
+      ConditionForTarget.emplace_back(nullptr, SI->getDefaultDest());
+    for (const SwitchInst::CaseHandle& It : SI->cases()) {
+      if (TargetToValue.count(It.getCaseSuccessor()))
+        ConditionForTarget.emplace_back(It.getCaseValue(), It.getCaseSuccessor());
+    }
+
+    assert(ConditionForTarget.size() > 0);
+    // Only one case/side of the branch exits. Nothing to do.
+    if (ConditionForTarget.size() == 1)
+      return TargetToValue.at(ConditionForTarget[0].second);
+
+    // Otherwise, we must create a tree of OpSelect.
     IRBuilder<> Builder(BB);
     Builder.SetInsertPoint(T);
 
-    if (auto *BI = dyn_cast<BranchInst>(T)) {
 
-      BasicBlock *LHSTarget = BI->getSuccessor(0);
-      BasicBlock *RHSTarget =
-          BI->isConditional() ? BI->getSuccessor(1) : nullptr;
+    Value *Source = SI->getCondition();
+    Value *LastSelect = Builder.CreateSelect(Builder.CreateCmp(CmpInst::ICMP_EQ, ConditionForTarget[1].first, Source),
+        TargetToValue.at(ConditionForTarget[1].second),
+        TargetToValue.at(ConditionForTarget[0].second));
 
-      Value *LHS = TargetToValue.count(LHSTarget) != 0
-                       ? TargetToValue.at(LHSTarget)
-                       : nullptr;
-      Value *RHS = TargetToValue.count(RHSTarget) != 0
-                       ? TargetToValue.at(RHSTarget)
-                       : nullptr;
-
-      if (LHS == nullptr || RHS == nullptr)
-        return LHS == nullptr ? RHS : LHS;
-      return Builder.CreateSelect(BI->getCondition(), LHS, RHS);
+    for (size_t i = 2; i < ConditionForTarget.size(); i++) {
+      Value *Condition = Builder.CreateCmp(CmpInst::ICMP_EQ, ConditionForTarget[i].first, Source);
+      LastSelect = Builder.CreateSelect(Condition,
+          TargetToValue.at(ConditionForTarget[i].second),
+          LastSelect);
     }
-
-    // TODO: add support for switch cases.
-    llvm_unreachable("Unhandled terminator type.");
+    return LastSelect;
   }
 
   /// Replaces |BB|'s branch targets present in |ToReplace| with |NewTarget|.
@@ -133,7 +164,7 @@ public:
   // Run the pass on the given convergence region, ignoring the sub-regions.
   // Returns true if the CFG changed, false otherwise.
   bool runOnConvergenceRegionNoRecurse(LoopInfo &LI,
-                                       const SPIRV::ConvergenceRegion *CR) {
+                                       SPIRV::ConvergenceRegion *CR) {
     // Gather all the exit targets for this region.
     SmallPtrSet<BasicBlock *, 4> ExitTargets;
     for (BasicBlock *Exit : CR->Exits) {
@@ -198,14 +229,19 @@ public:
     for (auto Exit : CR->Exits)
       replaceBranchTargets(Exit, ExitTargets, NewExitTarget);
 
+    CR = CR->Parent;
+    while (CR) {
+      CR->Blocks.insert(NewExitTarget);
+      CR = CR->Parent;
+    }
+
     return true;
   }
 
   /// Run the pass on the given convergence region and sub-regions (DFS).
   /// Returns true if a region/sub-region was modified, false otherwise.
   /// This returns as soon as one region/sub-region has been modified.
-  bool runOnConvergenceRegion(LoopInfo &LI,
-                              const SPIRV::ConvergenceRegion *CR) {
+  bool runOnConvergenceRegion(LoopInfo &LI, SPIRV::ConvergenceRegion *CR) {
     for (auto *Child : CR->Children)
       if (runOnConvergenceRegion(LI, Child))
         return true;
@@ -235,10 +271,10 @@ public:
 
   virtual bool runOnFunction(Function &F) override {
     LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
-    const auto *TopLevelRegion =
+    auto *TopLevelRegion =
         getAnalysis<SPIRVConvergenceRegionAnalysisWrapperPass>()
             .getRegionInfo()
-            .getTopLevelRegion();
+            .getWritableTopLevelRegion();
 
     // FIXME: very inefficient method: each time a region is modified, we bubble
     // back up, and recompute the whole convergence region tree. Once the
@@ -246,9 +282,6 @@ public:
     // to be efficient instead of simple.
     bool modified = false;
     while (runOnConvergenceRegion(LI, TopLevelRegion)) {
-      TopLevelRegion = getAnalysis<SPIRVConvergenceRegionAnalysisWrapperPass>()
-                           .getRegionInfo()
-                           .getTopLevelRegion();
       modified = true;
     }
 
@@ -262,6 +295,8 @@ public:
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<LoopInfoWrapperPass>();
     AU.addRequired<SPIRVConvergenceRegionAnalysisWrapperPass>();
+
+    AU.addPreserved<SPIRVConvergenceRegionAnalysisWrapperPass>();
     FunctionPass::getAnalysisUsage(AU);
   }
 };

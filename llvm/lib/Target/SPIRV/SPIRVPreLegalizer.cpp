@@ -748,6 +748,32 @@ static void insertSpirvDecorations(MachineFunction &MF, MachineIRBuilder MIB) {
     MI->eraseFromParent();
 }
 
+// If we just delete G_BLOCK_ADDR instructions with BlockAddress operands,
+// this leaves their BasicBlock counterparts in a "address taken" status. This
+// would make AsmPrinter to generate a series of unneeded labels of a "Address
+// of block that was removed by CodeGen" kind. Let's first ensure that we
+// don't have a dangling BlockAddress constants by zapping the BlockAddress
+// nodes, and only after that proceed with erasing G_BLOCK_ADDR instructions.
+void processBlockAddr(MachineFunction &MF) {
+  Constant *Replacement = ConstantInt::get(Type::getInt32Ty(MF.getFunction().getContext()), 1);
+  std::vector<MachineInstr*> ToRemove;
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB) {
+      if (MI.getOpcode() != TargetOpcode::G_BLOCK_ADDR)
+        continue;
+
+      BlockAddress *BA = const_cast<BlockAddress*>(MI.getOperand(1).getBlockAddress());
+      BA->replaceAllUsesWith(ConstantExpr::getIntToPtr(Replacement, BA->getType()));
+      BA->destroyConstant();
+      ToRemove.push_back(&MI);
+    }
+  }
+
+  for (MachineInstr *MI : ToRemove)
+    MI->eraseFromParent();
+}
+
+
 // Find basic blocks of the switch and replace registers in spv_switch() by its
 // MBB equivalent.
 static void processSwitches(MachineFunction &MF, SPIRVGlobalRegistry *GR,
@@ -796,12 +822,12 @@ static void processSwitches(MachineFunction &MF, SPIRVGlobalRegistry *GR,
                              "block in a switch statement");
         NewOps.push_back(MachineOperand::CreateMBB(It->second));
         MI.getParent()->addSuccessor(It->second);
-        ToEraseMI.insert(Ins[i]);
       } else {
         NewOps.push_back(
             MachineOperand::CreateCImm(Ins[i]->getOperand(1).getCImm()));
       }
     }
+
     for (unsigned i = MI.getNumOperands() - 1; i > 1; --i)
       MI.removeOperand(i);
     for (auto &MO : NewOps)
@@ -816,23 +842,38 @@ static void processSwitches(MachineFunction &MF, SPIRVGlobalRegistry *GR,
     }
   }
 
-  // If we just delete G_BLOCK_ADDR instructions with BlockAddress operands,
-  // this leaves their BasicBlock counterparts in a "address taken" status. This
-  // would make AsmPrinter to generate a series of unneeded labels of a "Address
-  // of block that was removed by CodeGen" kind. Let's first ensure that we
-  // don't have a dangling BlockAddress constants by zapping the BlockAddress
-  // nodes, and only after that proceed with erasing G_BLOCK_ADDR instructions.
-  Constant *Replacement =
-      ConstantInt::get(Type::getInt32Ty(MF.getFunction().getContext()), 1);
-  for (MachineInstr *BlockAddrI : ToEraseMI) {
-    if (BlockAddrI->getOpcode() == TargetOpcode::G_BLOCK_ADDR) {
-      BlockAddress *BA = const_cast<BlockAddress *>(
-          BlockAddrI->getOperand(1).getBlockAddress());
-      BA->replaceAllUsesWith(
-          ConstantExpr::getIntToPtr(Replacement, BA->getType()));
-      BA->destroyConstant();
+  for (MachineInstr *MI : ToEraseMI)
+      MI->eraseFromParent();
+}
+
+static void processMerges(MachineFunction &MF) {
+  DenseMap<const BasicBlock *, MachineBasicBlock *> BB2MBB;
+  SmallVector<MachineInstr *> InstructionsToPatch;
+  for (MachineBasicBlock &MBB : MF) {
+    BB2MBB[MBB.getBasicBlock()] = &MBB;
+    for (MachineInstr &MI : MBB) {
+      if (isSpvIntrinsic(MI, Intrinsic::spv_loop_merge) || isSpvIntrinsic(MI, Intrinsic::spv_selection_merge))
+        InstructionsToPatch.push_back(&MI);
     }
-    BlockAddrI->eraseFromParent();
+  }
+
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+  for (MachineInstr *MI : InstructionsToPatch) {
+    for (unsigned i = 1; i < MI->getNumOperands(); ++i) {
+      Register Reg = MI->getOperand(i).getReg();
+      MachineInstr *BuildMBB = MRI.getVRegDef(Reg);
+      assert(BuildMBB &&
+             BuildMBB->getOpcode() == TargetOpcode::G_BLOCK_ADDR &&
+             BuildMBB->getOperand(1).isBlockAddress() &&
+             BuildMBB->getOperand(1).getBlockAddress());
+      BasicBlock *BB = BuildMBB->getOperand(1).getBlockAddress()->getBasicBlock();
+      auto It = BB2MBB.find(BB);
+      if (It == BB2MBB.end())
+        report_fatal_error("cannot find a machine basic block by a basic block in a merge instruction");
+
+      MI->insert(MI->operands_begin() + i, MachineOperand::CreateMBB(It->second));
+      MI->removeOperand(i + 1);
+    }
   }
 }
 
@@ -884,7 +925,11 @@ bool SPIRVPreLegalizer::runOnMachineFunction(MachineFunction &MF) {
   foldConstantsIntoIntrinsics(MF, TrackedConstRegs);
   insertBitcasts(MF, GR, MIB);
   generateAssignInstrs(MF, GR, MIB, TargetExtConstTypes);
+
   processSwitches(MF, GR, MIB);
+  processMerges(MF);
+  processBlockAddr(MF);
+
   processInstrsWithTypeFolding(MF, GR, MIB);
   removeImplicitFallthroughs(MF, MIB);
   insertSpirvDecorations(MF, MIB);

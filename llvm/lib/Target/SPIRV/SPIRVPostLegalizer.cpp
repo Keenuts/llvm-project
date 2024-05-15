@@ -24,6 +24,8 @@
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/IntrinsicsSPIRV.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
+#include "llvm/CodeGen/MachinePostDominators.h"
+#include <stack>
 
 #define DEBUG_TYPE "spirv-postlegalizer"
 
@@ -150,6 +152,54 @@ static void processNewInstrs(MachineFunction &MF, SPIRVGlobalRegistry *GR,
   }
 }
 
+// Do a preorder traversal of the CFG starting from the BB |Start|.
+// point. Calls |op| on each basic block encountered during the traversal.
+void visit(MachineFunction &MF, MachineBasicBlock &Start, std::function<void(MachineBasicBlock *)> op) {
+  std::stack<MachineBasicBlock *> ToVisit;
+  SmallPtrSet<MachineBasicBlock *, 8> Seen;
+
+  ToVisit.push(&Start);
+  Seen.insert(ToVisit.top());
+  while (ToVisit.size() != 0) {
+    MachineBasicBlock *MBB = ToVisit.top();
+    ToVisit.pop();
+
+    op(MBB);
+
+    for (auto Succ : MBB->successors()) {
+      if (Seen.contains(Succ))
+        continue;
+      ToVisit.push(Succ);
+      Seen.insert(Succ);
+    }
+  }
+}
+
+// Do a preorder traversal of the CFG starting from the given function's entry
+// point. Calls |op| on each basic block encountered during the traversal.
+void visit(MachineFunction &MF, std::function<void(MachineBasicBlock *)> op) {
+  visit(MF, *MF.begin(), op);
+}
+
+// Sorts basic blocks by dominance to respect the SPIR-V spec.
+bool sortBlocks(MachineFunction &MF) {
+  MachineDominatorTree MDT(MF);
+
+  std::unordered_map<MachineBasicBlock *, size_t> Order;
+  size_t Index = 0;
+  visit(MF,
+        [&Order, &Index](MachineBasicBlock *MBB) { Order[MBB] = Index++; });
+
+  auto Comparator = [&Order](MachineBasicBlock &LHS, MachineBasicBlock &RHS) {
+    return Order[&LHS] < Order[&RHS];
+  };
+
+  MF.sort(Comparator);
+  // FIXME: need to check if the order changed. Maybe if the comparator
+  // returns false once, it did?
+  return true;
+}
+
 bool SPIRVPostLegalizer::runOnMachineFunction(MachineFunction &MF) {
   // Initialize the type registry.
   const SPIRVSubtarget &ST = MF.getSubtarget<SPIRVSubtarget>();
@@ -158,6 +208,7 @@ bool SPIRVPostLegalizer::runOnMachineFunction(MachineFunction &MF) {
   MachineIRBuilder MIB(MF);
 
   processNewInstrs(MF, GR, MIB);
+  sortBlocks(MF);
 
   return true;
 }

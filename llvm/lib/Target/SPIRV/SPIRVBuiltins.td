@@ -776,6 +776,11 @@ multiclass DemangledGroupBuiltinWrapper<string name, bits<8> minNumArgs, bits<8>
     def : GroupBuiltin<name, operation>;
 }
 
+multiclass DemangledGroupBuiltinWrapperVK<string name, bits<8> minNumArgs, bits<8> maxNumArgs, Op operation> {
+    def : DemangledBuiltin<name, GLSL_std_450, Wave, minNumArgs, maxNumArgs>;
+    def : GroupBuiltin<name, operation>;
+}
+
 defm : DemangledGroupBuiltin<"group_all", WorkOrSub, OpGroupAll>;
 defm : DemangledGroupBuiltinWrapper<"__spirv_GroupAll", 2, 2, OpGroupAll>;
 defm : DemangledGroupBuiltin<"group_any", WorkOrSub, OpGroupAny>;
@@ -794,6 +799,9 @@ defm : DemangledGroupBuiltin<"group_non_uniform_any", OnlySub, OpGroupNonUniform
 defm : DemangledGroupBuiltinWrapper<"__spirv_GroupNonUniformAny", 2, 2, OpGroupNonUniformAny>;
 defm : DemangledGroupBuiltin<"group_non_uniform_all_equal", OnlySub, OpGroupNonUniformAllEqual>;
 defm : DemangledGroupBuiltinWrapper<"__spirv_GroupNonUniformAllEqual", 2, 2, OpGroupNonUniformAllEqual>;
+
+
+defm : DemangledGroupBuiltinWrapperVK<"__hlsl_wave_is_first_lane", 0, 0, OpGroupNonUniformElect>;
 
 // cl_khr_subgroup_ballot
 defm : DemangledGroupBuiltin<"group_ballot", OnlySub, OpGroupNonUniformBallot>;
