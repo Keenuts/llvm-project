@@ -422,6 +422,9 @@ bool llvm::wouldInstructionBeTriviallyDeadOnUnusedPaths(
 
 bool llvm::wouldInstructionBeTriviallyDead(const Instruction *I,
                                            const TargetLibraryInfo *TLI) {
+  if (isExemptedOfDCE(I))
+    return false;
+
   if (I->isTerminator())
     return false;
 
@@ -531,6 +534,18 @@ bool llvm::wouldInstructionBeTriviallyDead(const Instruction *I,
       if (!LI->isVolatile() && GV->isConstant())
         return true;
 
+  return false;
+}
+
+bool llvm::isExemptedOfDCE(const Instruction *I) {
+  // Convergence intrinsics presence convey information, and should not be DCEd,
+  // even if their token is not used.
+  if (const IntrinsicInst *II = dyn_cast<IntrinsicInst>(I)) {
+    if (II->getIntrinsicID() == Intrinsic::experimental_convergence_entry ||
+        II->getIntrinsicID() == Intrinsic::experimental_convergence_loop ||
+        II->getIntrinsicID() == Intrinsic::experimental_convergence_anchor)
+      return true;
+  }
   return false;
 }
 

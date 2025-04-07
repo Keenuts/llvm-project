@@ -97,6 +97,10 @@ bool RecursivelyDeleteTriviallyDeadInstructions(
     std::function<void(Value *)> AboutToDeleteCallback =
         std::function<void(Value *)>());
 
+/// Returns true if the given instruction should not be removed by DCE, even
+/// if their result is not used.
+bool isExemptedOfDCE(const Instruction *I);
+
 /// Delete all of the instructions in `DeadInsts`, and all other instructions
 /// that deleting these in turn causes to be trivially dead.
 ///
