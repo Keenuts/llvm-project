@@ -290,6 +290,7 @@ void Parser::ParseHLSLAnnotations(ParsedAttributes &Attrs,
   case ParsedAttr::AT_HLSLSV_GroupIndex:
   case ParsedAttr::AT_HLSLSV_DispatchThreadID:
   case ParsedAttr::AT_HLSLSV_Position:
+  case ParsedAttr::AT_HLSLVkLocation:
     break;
   default:
     llvm_unreachable("invalid HLSL Annotation");

@@ -8602,6 +8602,18 @@ https://github.com/microsoft/hlsl-specs/blob/main/proposals/0011-inline-spirv.md
   }];
 }
 
+def HLSLVkLocationDocs : Documentation {
+  let Category = DocCatVariable;
+  let Content = [{
+Attribute used for specifying the location number for the stage input/output
+variables. Allowed on function parameters, function returns, and struct
+fields. This parameter has no effect when used outside of an entrypoint
+parameter/parameter field/return value.
+
+This attribute maps to the 'Location' SPIR-V decoration.
+  }];
+}
+
 def AnnotateTypeDocs : Documentation {
   let Category = DocCatType;
   let Heading = "annotate_type";

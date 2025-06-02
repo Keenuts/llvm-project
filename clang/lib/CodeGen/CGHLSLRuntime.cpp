@@ -362,6 +362,16 @@ void clang::CodeGen::CGHLSLRuntime::setHLSLEntryAttributes(
                 WaveSizeAttr->getPreferred());
     Fn->addFnAttr(WaveSizeKindStr, WaveSizeStr);
   }
+
+  if (HLSLVkLocationAttr *LocationAttr = FD->getAttr<HLSLVkLocationAttr>()) {
+    // const StringRef NumThreadsKindStr = "hlsl.numthreads";
+    // std::string NumThreadsStr =
+    //     formatv("{0},{1},{2}", NumThreadsAttr->getX(),
+    //     NumThreadsAttr->getY(),
+    //             NumThreadsAttr->getZ());
+    // Fn->addFnAttr(NumThreadsKindStr, NumThreadsStr);
+  }
+
   // HLSL entry functions are materialized for module functions with
   // HLSLShaderAttr attribute. SetLLVMFunctionAttributesForDefinition called
   // later in the compiler-flow for such module functions is not aware of and
@@ -396,6 +406,16 @@ static void addSPIRVBuiltinDecoration(llvm::GlobalVariable *GV,
   GV->addMetadata("spirv.Decorations", *Decoration);
 }
 
+static void addLocationDecoration(llvm::GlobalVariable *GV, unsigned Location) {
+  LLVMContext &Ctx = GV->getContext();
+  IRBuilder<> B(GV->getContext());
+  MDNode *Operands =
+      MDNode::get(Ctx, {ConstantAsMetadata::get(B.getInt32(/* Location */ 30)),
+                        ConstantAsMetadata::get(B.getInt32(Location))});
+  MDNode *Decoration = MDNode::get(Ctx, {Operands});
+  GV->addMetadata("spirv.Decorations", *Decoration);
+}
+
 static llvm::Value *createSPIRVBuiltinLoad(IRBuilder<> &B, llvm::Module &M,
                                            llvm::Type *Ty, const Twine &Name,
                                            unsigned BuiltInID) {
@@ -405,6 +425,17 @@ static llvm::Value *createSPIRVBuiltinLoad(IRBuilder<> &B, llvm::Module &M,
       llvm::GlobalVariable::GeneralDynamicTLSModel,
       /* AddressSpace */ 7, /* isExternallyInitialized= */ true);
   addSPIRVBuiltinDecoration(GV, BuiltInID);
+  return B.CreateLoad(Ty, GV);
+}
+
+static llvm::Value *createSPIRVLocationLoad(IRBuilder<> &B, llvm::Module &M,
+                                            llvm::Type *Ty, unsigned Location) {
+  auto *GV = new llvm::GlobalVariable(
+      M, Ty, /* isConstant= */ true, llvm::GlobalValue::ExternalLinkage,
+      /* Initializer= */ nullptr, /* Name= */ "", /* insertBefore= */ nullptr,
+      llvm::GlobalVariable::GeneralDynamicTLSModel,
+      /* AddressSpace */ 7, /* isExternallyInitialized= */ true);
+  addLocationDecoration(GV, Location);
   return B.CreateLoad(Ty, GV);
 }
 
@@ -437,6 +468,13 @@ llvm::Value *CGHLSLRuntime::emitInputSemantic(IRBuilder<> &B,
                                     /* BuiltIn::Position */ 0);
     llvm_unreachable("SV_Position semantic not implemented for this target.");
   }
+  if (HLSLVkLocationAttr *Attr = D.getAttr<HLSLVkLocationAttr>()) {
+    if (getArch() == llvm::Triple::spirv)
+      return createSPIRVLocationLoad(B, CGM.getModule(), Ty,
+                                     Attr->getLocation());
+    llvm_unreachable("vk::location attribute is not implemented for DXIL");
+  }
+
   assert(false && "Unhandled parameter attribute");
   return nullptr;
 }

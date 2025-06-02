@@ -133,6 +133,7 @@ public:
   bool handleResourceTypeAttr(QualType T, const ParsedAttr &AL);
 
   void handleVkExtBuiltinInputAttr(Decl *D, const ParsedAttr &AL);
+  void handleVkLocationAttr(Decl *D, const ParsedAttr &AL);
 
   bool CheckBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
   QualType ProcessResourceTypeAttributes(QualType Wrapped);

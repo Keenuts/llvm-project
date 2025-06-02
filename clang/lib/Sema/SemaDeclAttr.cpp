@@ -7621,6 +7621,9 @@ ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D, const ParsedAttr &AL,
   case ParsedAttr::AT_HLSLParamModifier:
     S.HLSL().handleParamModifierAttr(D, AL);
     break;
+  case ParsedAttr::AT_HLSLVkLocation:
+    S.HLSL().handleVkLocationAttr(D, AL);
+    break;
 
   case ParsedAttr::AT_AbiTag:
     handleAbiTagAttr(S, D, AL);

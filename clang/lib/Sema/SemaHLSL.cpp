@@ -771,6 +771,12 @@ void SemaHLSL::CheckSemanticAnnotation(
       return;
     DiagnoseAttrStageMismatch(AnnotationAttr, ST, {llvm::Triple::Pixel});
     break;
+  case attr::HLSLVkLocation:
+    if (ST == llvm::Triple::Pixel || ST == llvm::Triple::Vertex)
+      return;
+    DiagnoseAttrStageMismatch(AnnotationAttr, ST,
+                              {llvm::Triple::Pixel, llvm::Triple::Vertex});
+    break;
   default:
     llvm_unreachable("Unknown HLSLAnnotationAttr");
   }
@@ -1410,6 +1416,17 @@ bool SemaHLSL::handleResourceTypeAttr(QualType T, const ParsedAttr &AL) {
 
   HLSLResourcesTypeAttrs.emplace_back(A);
   return true;
+}
+
+void SemaHLSL::handleVkLocationAttr(Decl *D, const ParsedAttr &AL) {
+  auto *VD = cast<ParmVarDecl>(D);
+
+  uint32_t Location;
+  if (!SemaRef.checkUInt32Argument(AL, AL.getArgAsExpr(0), Location))
+    return;
+
+  D->addAttr(::new (getASTContext())
+                 HLSLVkLocationAttr(getASTContext(), AL, Location));
 }
 
 // Combines all resource type attributes and creates HLSLAttributedResourceType.
