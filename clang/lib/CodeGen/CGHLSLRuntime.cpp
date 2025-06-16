@@ -450,7 +450,8 @@ static void createSPIRVLocationStore(IRBuilder<> &B, llvm::Module &M,
   B.CreateStore(Value, GV);
 }
 
-void CGHLSLRuntime::collectInputSemantic(IRBuilder<> &B, const DeclaratorDecl *D, llvm::Type *Type, SmallVectorImpl<llvm::Value*> &Inputs) {
+#if 0
+void CGHLSLRuntime::collectInputSemantic(IRBuilder<> &B, const DeclaratorDecl *D, llvm::Type *LType, SmallVectorImpl<llvm::Value*> &Inputs) {
   if (D->hasAttrs()) {
     Inputs.push_back(emitInputSemantic(B, *D, LType));
     return;
@@ -461,19 +462,34 @@ void CGHLSLRuntime::collectInputSemantic(IRBuilder<> &B, const DeclaratorDecl *D
   const RecordType *RT = dyn_cast<RecordType>(CType);
   const StructType *ST = dyn_cast<StructType>(LType);
   if (!RT)
-    return false;
+    return;
   const RecordDecl *RD = RT->getDecl();
   assert(ST);
-  assert(ST->getNumElements() == RD->fields_end() - RD->fields_begin());
 
-  for (unsigned I = 0; I < ST->getNumElements(); ++I)
-    collectInputSemantic(B, RD->fields()[I], ST->getElementType(I), Inputs);
+  auto It = RD->field_begin();
+  for (llvm::Type *ElementType : ST->elements()) {
+    assert(It != RD->field_end());
+    collectInputSemantic(B, *It, ElementType, Inputs);
+    ++It;
+  }
 }
     //Args.push_back(emitInputSemantic(B, *PD, Param.getType()));
+#endif
 
 llvm::Value *CGHLSLRuntime::emitInputSemantic(IRBuilder<> &B,
                                               const DeclaratorDecl &D,
-                                              llvm::Type *Ty) {
+                                              llvm::Argument *Arg) {
+  // There are 2 cases for entrypoint arguments:
+  // - semantic attached to the parameter itself.
+  // - semantic attached to the struct type fields.
+  // Scalar require a semantic, and are passed by value.
+  // Structs require semantic on the field, and are passed by reference
+  // (to a local copy).
+
+  if (!D.hasAttrs()) {
+    return nullptr;
+  }
+
   assert(D.hasAttrs() && "Entry parameter missing annotation attribute!");
   if (D.hasAttr<HLSLSV_GroupIndexAttr>()) {
     llvm::Function *GroupIndex =
@@ -555,8 +571,9 @@ void CGHLSLRuntime::emitEntryFunction(const FunctionDecl *FD,
     }
 
     const ParmVarDecl *PD = FD->getParamDecl(Param.getArgNo() - SRetOffset);
-    collectInputSemantic(B, PD, Param.getType(), Args);
-    //Args.push_back(emitInputSemantic(B, *PD, Param.getType()));
+    Args.push_back(emitInputSemantic(B, *PD, Param));
+    //llvm::Type *ParamType = Param.hasByValAttr() ? Param.getParamByValType() : Param.getType();
+    //collectInputSemantic(B, PD, ParamType, Args);
   }
 
   CallInst *CI = B.CreateCall(FunctionCallee(Fn), Args, OB);
