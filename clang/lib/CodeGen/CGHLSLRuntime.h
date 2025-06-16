@@ -22,6 +22,7 @@
 #include "llvm/IR/IntrinsicsSPIRV.h"
 
 #include "clang/Basic/Builtins.h"
+#include "clang/AST/Decl.h"
 #include "clang/Basic/HLSLRuntime.h"
 
 #include "llvm/ADT/SmallVector.h"
@@ -138,8 +139,8 @@ public:
 protected:
   CodeGenModule &CGM;
 
-  llvm::Value *emitInputSemantic(llvm::IRBuilder<> &B, const ParmVarDecl &D,
-                                 llvm::Type *Ty);
+  void collectInputSemantic(llvm::IRBuilder<> &B, const DeclaratorDecl *D, llvm::Type *Type, SmallVectorImpl<llvm::Value*> &Inputs);
+  llvm::Value *emitInputSemantic(llvm::IRBuilder<> &B, const DeclaratorDecl &D, llvm::Type *Ty);
 
 public:
   CGHLSLRuntime(CodeGenModule &CGM) : CGM(CGM) {}

@@ -674,6 +674,26 @@ void SemaHLSL::ActOnTopLevelFunction(FunctionDecl *FD) {
   }
 }
 
+bool SemaHLSL::isSemanticValid(FunctionDecl *FD, DeclaratorDecl *D) {
+  const auto *AnnotationAttr = D->getAttr<HLSLAnnotationAttr>();
+  if (AnnotationAttr) {
+    CheckSemanticAnnotation(FD, D, AnnotationAttr);
+    return true;
+  }
+
+  const Type *T = D->getType()->getUnqualifiedDesugaredType();//.getDesugaredType(getASTContext());
+  const RecordType *RT = dyn_cast<RecordType>(T);
+  if (!RT)
+    return false;
+
+  const RecordDecl *RD = RT->getDecl();
+  for (FieldDecl *Field : RD->fields()) {
+    if (!isSemanticValid(FD, Field))
+      return false;
+  }
+  return true;
+}
+
 void SemaHLSL::CheckEntryPoint(FunctionDecl *FD) {
   const auto *ShaderAttr = FD->getAttr<HLSLShaderAttr>();
   assert(ShaderAttr && "Entry point has no shader attribute");
@@ -735,15 +755,17 @@ void SemaHLSL::CheckEntryPoint(FunctionDecl *FD) {
   }
 
   for (ParmVarDecl *Param : FD->parameters()) {
-    if (const auto *AnnotationAttr = Param->getAttr<HLSLAnnotationAttr>()) {
-      CheckSemanticAnnotation(FD, Param, AnnotationAttr);
-    } else {
+    if (!isSemanticValid(FD, Param)) {
       // FIXME: Handle struct parameters where annotations are on struct fields.
       // See: https://github.com/llvm/llvm-project/issues/57875
       Diag(FD->getLocation(), diag::err_hlsl_missing_semantic_annotation);
       Diag(Param->getLocation(), diag::note_previous_decl) << Param;
       FD->setInvalidDecl();
     }
+    //if (const auto *AnnotationAttr = Param->getAttr<HLSLAnnotationAttr>()) {
+    //  CheckSemanticAnnotation(FD, Param, AnnotationAttr);
+    //} else {
+    //}
   }
   // FIXME: Verify return type semantic annotation.
 }
@@ -767,9 +789,9 @@ void SemaHLSL::CheckSemanticAnnotation(
   case attr::HLSLSV_Position:
     // TODO(#143523): allow use on other shader types & output once the overall
     // semantic logic is implemented.
-    if (ST == llvm::Triple::Pixel)
+    if (ST == llvm::Triple::Pixel || ST == llvm::Triple::Vertex)
       return;
-    DiagnoseAttrStageMismatch(AnnotationAttr, ST, {llvm::Triple::Pixel});
+    DiagnoseAttrStageMismatch(AnnotationAttr, ST, {llvm::Triple::Pixel, llvm::Triple::Vertex});
     break;
   case attr::HLSLVkLocation:
     if (ST == llvm::Triple::Pixel || ST == llvm::Triple::Vertex)

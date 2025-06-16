@@ -439,8 +439,40 @@ static llvm::Value *createSPIRVLocationLoad(IRBuilder<> &B, llvm::Module &M,
   return B.CreateLoad(Ty, GV);
 }
 
+static void createSPIRVLocationStore(IRBuilder<> &B, llvm::Module &M,
+                                     llvm::Value *Value, unsigned Location) {
+  auto *GV = new llvm::GlobalVariable(
+      M, Value->getType(), /* isConstant= */ false, llvm::GlobalValue::ExternalLinkage,
+      /* Initializer= */ nullptr, /* Name= */ "", /* insertBefore= */ nullptr,
+      llvm::GlobalVariable::GeneralDynamicTLSModel,
+      /* AddressSpace */ 8, /* isExternallyInitialized= */ false);
+  addLocationDecoration(GV, Location);
+  B.CreateStore(Value, GV);
+}
+
+void CGHLSLRuntime::collectInputSemantic(IRBuilder<> &B, const DeclaratorDecl *D, llvm::Type *Type, SmallVectorImpl<llvm::Value*> &Inputs) {
+  if (D->hasAttrs()) {
+    Inputs.push_back(emitInputSemantic(B, *D, LType));
+    return;
+  }
+
+  const Type *CType = D->getType()->getUnqualifiedDesugaredType();
+
+  const RecordType *RT = dyn_cast<RecordType>(CType);
+  const StructType *ST = dyn_cast<StructType>(LType);
+  if (!RT)
+    return false;
+  const RecordDecl *RD = RT->getDecl();
+  assert(ST);
+  assert(ST->getNumElements() == RD->fields_end() - RD->fields_begin());
+
+  for (unsigned I = 0; I < ST->getNumElements(); ++I)
+    collectInputSemantic(B, RD->fields()[I], ST->getElementType(I), Inputs);
+}
+    //Args.push_back(emitInputSemantic(B, *PD, Param.getType()));
+
 llvm::Value *CGHLSLRuntime::emitInputSemantic(IRBuilder<> &B,
-                                              const ParmVarDecl &D,
+                                              const DeclaratorDecl &D,
                                               llvm::Type *Ty) {
   assert(D.hasAttrs() && "Entry parameter missing annotation attribute!");
   if (D.hasAttr<HLSLSV_GroupIndexAttr>()) {
@@ -521,14 +553,19 @@ void CGHLSLRuntime::emitEntryFunction(const FunctionDecl *FD,
       Args.emplace_back(PoisonValue::get(Param.getType()));
       continue;
     }
+
     const ParmVarDecl *PD = FD->getParamDecl(Param.getArgNo() - SRetOffset);
-    Args.push_back(emitInputSemantic(B, *PD, Param.getType()));
+    collectInputSemantic(B, PD, Param.getType(), Args);
+    //Args.push_back(emitInputSemantic(B, *PD, Param.getType()));
   }
 
   CallInst *CI = B.CreateCall(FunctionCallee(Fn), Args, OB);
   CI->setCallingConv(Fn->getCallingConv());
+
   // FIXME: Handle codegen for return type semantics.
   // See: https://github.com/llvm/llvm-project/issues/57875
+  if (Fn->getReturnType() != CGM.VoidTy)
+    createSPIRVLocationStore(B, CGM.getModule(), CI, /* location= */ 0);
   B.CreateRetVoid();
 
   // Add and identify root signature to function, if applicable
