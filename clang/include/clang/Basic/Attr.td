@@ -4848,7 +4848,7 @@ def HLSLSV_GroupID: HLSLAnnotationAttr {
 
 def HLSLSV_GroupIndex: HLSLAnnotationAttr {
   let Spellings = [HLSLAnnotation<"sv_groupindex">];
-  let Subjects = SubjectList<[ParmVar, GlobalVar]>;
+  let Subjects = SubjectList<[ParmVar, GlobalVar, Field]>;
   let LangOpts = [HLSL];
   let Documentation = [HLSLSV_GroupIndexDocs];
 }

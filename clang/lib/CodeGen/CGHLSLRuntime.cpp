@@ -478,7 +478,7 @@ void CGHLSLRuntime::collectInputSemantic(IRBuilder<> &B, const DeclaratorDecl *D
 
 llvm::Value *CGHLSLRuntime::emitInputSemantic(IRBuilder<> &B,
                                               const DeclaratorDecl &D,
-                                              llvm::Argument *Arg) {
+                                              llvm::Type *Ty) {
   // There are 2 cases for entrypoint arguments:
   // - semantic attached to the parameter itself.
   // - semantic attached to the struct type fields.
@@ -527,6 +527,39 @@ llvm::Value *CGHLSLRuntime::emitInputSemantic(IRBuilder<> &B,
   return nullptr;
 }
 
+llvm::Value *CGHLSLRuntime::handleScalarSemanticLoad(IRBuilder<> &B, llvm::Type *T, const clang::DeclaratorDecl *ItemDecl, clang::HLSLAnnotationAttr *ParentSemantic) {
+
+  // TODO: handle the HLSLAnnotationAttr bit
+  llvm::Value *V = emitInputSemantic(B, *ItemDecl, T);
+  return V;
+  //return llvm::PoisonValue::get(T);
+}
+
+llvm::Value *CGHLSLRuntime::handleSemanticLoad(IRBuilder<> &B, llvm::Type *T, const clang::DeclaratorDecl *ItemDecl, clang::HLSLAnnotationAttr *ParentSemantic) {
+  if (T->isArrayTy()) {
+    // TODO: arrays might also be passed by ref using byval? baricentrics maybe?
+    assert(false && "Unhandled type for input semantic: array");
+  }
+
+  if (!T->isStructTy())
+    return handleScalarSemanticLoad(B, T, ItemDecl, ParentSemantic);
+
+  const llvm::StructType *ST = cast<StructType>(T);
+  const clang::RecordDecl *RD = ItemDecl->getType()->getAsRecordDecl();
+
+  // TODO: handle explicit padding in struct if that ever becomes a thing.
+  assert(std::distance(RD->field_begin(), RD->field_end()) == ST->getNumElements());
+  clang::HLSLAnnotationAttr *Semantic = ParentSemantic ? ParentSemantic : RD->getAttr<clang::HLSLAnnotationAttr>();
+
+  llvm::Value *Aggregate = llvm::PoisonValue::get(T);
+  auto FieldDecl = RD->field_begin();
+  for (unsigned I = 0; I < ST->getNumElements(); ++I) {
+    Aggregate = B.CreateInsertValue(Aggregate, handleSemanticLoad(B, ST->getElementType(I), *FieldDecl, Semantic), I);
+    ++FieldDecl;
+  }
+  return Aggregate;
+}
+
 void CGHLSLRuntime::emitEntryFunction(const FunctionDecl *FD,
                                       llvm::Function *Fn) {
   llvm::Module &M = CGM.getModule();
@@ -547,7 +580,6 @@ void CGHLSLRuntime::emitEntryFunction(const FunctionDecl *FD,
 
   BasicBlock *BB = BasicBlock::Create(Ctx, "entry", EntryFn);
   IRBuilder<> B(BB);
-  llvm::SmallVector<Value *> Args;
 
   SmallVector<OperandBundleDef, 1> OB;
   if (CGM.shouldEmitConvergenceTokens()) {
@@ -558,8 +590,7 @@ void CGHLSLRuntime::emitEntryFunction(const FunctionDecl *FD,
     OB.emplace_back("convergencectrl", bundleArgs);
   }
 
-  // FIXME: support struct parameters where semantics are on members.
-  // See: https://github.com/llvm/llvm-project/issues/57874
+  llvm::SmallVector<Value *> Args;
   unsigned SRetOffset = 0;
   for (const auto &Param : Fn->args()) {
     if (Param.hasStructRetAttr()) {
@@ -571,10 +602,27 @@ void CGHLSLRuntime::emitEntryFunction(const FunctionDecl *FD,
     }
 
     const ParmVarDecl *PD = FD->getParamDecl(Param.getArgNo() - SRetOffset);
+    if (!Param.getType()->isPointerTy()) {
+      Args.push_back(handleSemanticLoad(B, Param.getType(), PD, /* ParentSemantic= */ nullptr));
+    } else {
+      assert(Param.hasByValAttr());
+      llvm::Value *Aggregate = handleSemanticLoad(B, Param.getParamByValType(), PD, /* ParentSemantic= */ nullptr);
+      llvm::Value *Var = B.CreateAlloca(Param.getParamByValType());
+      B.CreateStore(Aggregate, Var);
+      Args.push_back(Var);
+    }
+  }
+
+#if 0
+  // FIXME: support struct parameters where semantics are on members.
+  // See: https://github.com/llvm/llvm-project/issues/57874
+  for (const auto &Param : Fn->args()) {
+
     Args.push_back(emitInputSemantic(B, *PD, Param));
     //llvm::Type *ParamType = Param.hasByValAttr() ? Param.getParamByValType() : Param.getType();
     //collectInputSemantic(B, PD, ParamType, Args);
   }
+#endif
 
   CallInst *CI = B.CreateCall(FunctionCallee(Fn), Args, OB);
   CI->setCallingConv(Fn->getCallingConv());
