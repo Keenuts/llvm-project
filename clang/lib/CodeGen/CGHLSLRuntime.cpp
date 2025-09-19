@@ -613,10 +613,18 @@ llvm::Value *CGHLSLRuntime::emitSystemSemanticLoad(
 }
 
 llvm::Value *
-CGHLSLRuntime::handleScalarSemanticLoad(IRBuilder<> &B, llvm::Type *Type,
+CGHLSLRuntime::handleScalarSemanticLoad(IRBuilder<> &B, const FunctionDecl *FD,
+                                        llvm::Type *Type,
                                         const clang::DeclaratorDecl *Decl) {
-  HLSLSemanticAttr *Semantic = Decl->getAttr<HLSLSemanticAttr>();
-  // Sema either attached a semantic to each field/param, or raised an error.
+
+  HLSLSemanticAttr *Semantic = nullptr;
+  for (HLSLSemanticAttr *Item : FD->specific_attrs<HLSLSemanticAttr>()) {
+    if (Item->getTargetDecl() == Decl) {
+      Semantic = Item;
+      break;
+    }
+  }
+  // Sema must create one attribute per scalar field.
   assert(Semantic);
 
   std::optional<unsigned> Index = std::nullopt;
@@ -626,7 +634,8 @@ CGHLSLRuntime::handleScalarSemanticLoad(IRBuilder<> &B, llvm::Type *Type,
 }
 
 llvm::Value *
-CGHLSLRuntime::handleStructSemanticLoad(IRBuilder<> &B, llvm::Type *Type,
+CGHLSLRuntime::handleStructSemanticLoad(IRBuilder<> &B, const FunctionDecl *FD,
+                                        llvm::Type *Type,
                                         const clang::DeclaratorDecl *Decl) {
   const llvm::StructType *ST = cast<StructType>(Type);
   const clang::RecordDecl *RD = Decl->getType()->getAsRecordDecl();
@@ -638,7 +647,7 @@ CGHLSLRuntime::handleStructSemanticLoad(IRBuilder<> &B, llvm::Type *Type,
   auto FieldDecl = RD->field_begin();
   for (unsigned I = 0; I < ST->getNumElements(); ++I) {
     llvm::Value *ChildValue =
-        handleSemanticLoad(B, ST->getElementType(I), *FieldDecl);
+        handleSemanticLoad(B, FD, ST->getElementType(I), *FieldDecl);
     assert(ChildValue);
     Aggregate = B.CreateInsertValue(Aggregate, ChildValue, I);
     ++FieldDecl;
@@ -648,11 +657,12 @@ CGHLSLRuntime::handleStructSemanticLoad(IRBuilder<> &B, llvm::Type *Type,
 }
 
 llvm::Value *
-CGHLSLRuntime::handleSemanticLoad(IRBuilder<> &B, llvm::Type *Type,
+CGHLSLRuntime::handleSemanticLoad(IRBuilder<> &B, const FunctionDecl *FD,
+                                  llvm::Type *Type,
                                   const clang::DeclaratorDecl *Decl) {
   if (Type->isStructTy())
-    return handleStructSemanticLoad(B, Type, Decl);
-  return handleScalarSemanticLoad(B, Type, Decl);
+    return handleStructSemanticLoad(B, FD, Type, Decl);
+  return handleScalarSemanticLoad(B, FD, Type, Decl);
 }
 
 void CGHLSLRuntime::emitEntryFunction(const FunctionDecl *FD,
@@ -706,7 +716,7 @@ void CGHLSLRuntime::emitEntryFunction(const FunctionDecl *FD,
     } else {
       llvm::Type *ParamType =
           Param.hasByValAttr() ? Param.getParamByValType() : Param.getType();
-      SemanticValue = handleSemanticLoad(B, ParamType, PD);
+      SemanticValue = handleSemanticLoad(B, FD, ParamType, PD);
       if (!SemanticValue)
         return;
       if (Param.hasByValAttr()) {
