@@ -263,6 +263,9 @@ private:
   bool selectGEP(Register ResVReg, const SPIRVType *ResType,
                  MachineInstr &I) const;
 
+  bool selectStructuredGEP(Register &ResVReg, const SPIRVType *ResType,
+                           MachineInstr &I) const;
+
   bool selectFrameIndex(Register ResVReg, const SPIRVType *ResType,
                         MachineInstr &I) const;
   bool selectAllocaArray(Register ResVReg, const SPIRVType *ResType,
@@ -3450,6 +3453,9 @@ bool SPIRVInstructionSelector::selectIntrinsic(Register ResVReg,
   // Discard internal intrinsics.
   case Intrinsic::spv_value_md:
     break;
+  case Intrinsic::structured_gep: {
+    return selectStructuredGEP(ResVReg, ResType, I);
+  }
   case Intrinsic::spv_resource_handlefrombinding: {
     return selectHandleFromBinding(ResVReg, ResType, I);
   }
@@ -3481,6 +3487,19 @@ bool SPIRVInstructionSelector::selectIntrinsic(Register ResVReg,
   }
   }
   return true;
+}
+
+bool SPIRVInstructionSelector::selectStructuredGEP(Register &ResVReg,
+                                                   const SPIRVType *ResType,
+                                                   MachineInstr &I) const {
+  auto Res = BuildMI(*I.getParent(), I, I.getDebugLoc(), TII.get(SPIRV::OpAccessChain))
+                 .addDef(ResVReg)
+                 .addUse(GR.getSPIRVTypeID(ResType))
+                 // Object to get a pointer to.
+                 .addUse(I.getOperand(3).getReg());
+  for (unsigned i = 3; i < I.getNumExplicitOperands(); ++i)
+    Res.addUse(I.getOperand(i).getReg());
+  return Res.constrainAllUses(TII, TRI, RBI);
 }
 
 bool SPIRVInstructionSelector::selectHandleFromBinding(Register &ResVReg,

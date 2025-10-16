@@ -4416,6 +4416,20 @@ llvm::CallInst *CodeGenFunction::EmitTrapCall(llvm::Intrinsic::ID IntrID) {
   return TrapCall;
 }
 
+static llvm::Value *emitStructuredGEP(CodeGenFunction &CGF,
+                                      llvm::Type *BaseType,
+                                      llvm::Value *Ptr,
+                                      ArrayRef<llvm::Value*> Indices) {
+    SmallVector<llvm::Value*, 4> Args;
+    Args.push_back(llvm::PoisonValue::get(BaseType));
+    Args.push_back(Ptr);
+    for (size_t I = 1; I < Indices.size(); I++)
+      Args.push_back(Indices[I]);
+
+    llvm::Function *Fn = CGF.CGM.getIntrinsic(llvm::Intrinsic::structured_gep, { Ptr->getType(), BaseType });
+    return CGF.Builder.CreateCall(Fn, Args);
+}
+
 Address CodeGenFunction::EmitArrayToPointerDecay(const Expr *E,
                                                  LValueBaseInfo *BaseInfo,
                                                  TBAAAccessInfo *TBAAInfo) {
@@ -4436,6 +4450,15 @@ Address CodeGenFunction::EmitArrayToPointerDecay(const Expr *E,
   if (!E->getType()->isVariableArrayType()) {
     assert(isa<llvm::ArrayType>(Addr.getElementType()) &&
            "Expected pointer to array");
+    if (getLangOpts().HLSL) {
+      llvm::Value *Ptr = Addr.emitRawPointer(*this);
+
+      return Address(
+          emitStructuredGEP(*this, NewTy, Ptr, { Builder.getSize(0) }),
+          Addr.getElementType(),
+          Addr.getAlignment(),
+          Addr.isKnownNonNull());
+    }
     Addr = Builder.CreateConstArrayGEP(Addr, 0, "arraydecay");
   }
 
@@ -4475,6 +4498,9 @@ static llvm::Value *emitArraySubscriptGEP(CodeGenFunction &CGF,
                                           bool signedIndices,
                                           SourceLocation loc,
                                     const llvm::Twine &name = "arrayidx") {
+  if (CGF.getLangOpts().HLSL)
+    return emitStructuredGEP(CGF, elemType, ptr, indices);
+
   if (inbounds) {
     return CGF.EmitCheckedInBoundsGEP(elemType, ptr, indices, signedIndices,
                                       CodeGenFunction::NotSubtraction, loc,
@@ -4490,6 +4516,12 @@ static Address emitArraySubscriptGEP(CodeGenFunction &CGF, Address addr,
                                      bool signedIndices, SourceLocation loc,
                                      CharUnits align,
                                      const llvm::Twine &name = "arrayidx") {
+
+  if (CGF.getLangOpts().HLSL) {
+    llvm::Value *Ptr = addr.emitRawPointer(CGF);
+    return RawAddress(emitStructuredGEP(CGF, elementType, Ptr, indices), elementType, align);
+  }
+
   if (inbounds) {
     return CGF.EmitCheckedInBoundsGEP(addr, indices, elementType, signedIndices,
                                       CodeGenFunction::NotSubtraction, loc,
@@ -5401,6 +5433,15 @@ static Address emitAddrOfFieldStorage(CodeGenFunction &CGF, Address base,
 
   unsigned idx =
     CGF.CGM.getTypes().getCGRecordLayout(rec).getLLVMFieldNo(field);
+  llvm::Type *StructType = CGF.CGM.getTypes().getCGRecordLayout(rec).getLLVMType();
+
+  if (CGF.getLangOpts().HLSL) {
+      llvm::Value *Ptr = base.emitRawPointer(CGF);
+      return RawAddress(
+          emitStructuredGEP(CGF, StructType, Ptr, { CGF.Builder.getSize(idx) }),
+          base.getElementType(),
+          base.getAlignment());
+  }
 
   if (!IsInBounds)
     return CGF.Builder.CreateConstGEP2_32(base, 0, idx, field->getName());

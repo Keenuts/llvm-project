@@ -57,6 +57,24 @@ namespace llvm::SPIRV {
 
 namespace {
 
+static bool isaGEP(const Value *I) {
+  const IntrinsicInst *II = dyn_cast_or_null<IntrinsicInst>(I);
+  if (II == nullptr)
+    return false;
+  return II->getIntrinsicID() == Intrinsic::structured_gep;
+}
+
+IntrinsicInst* dyncastGEP(Instruction *I) {
+  IntrinsicInst *II = dyn_cast_or_null<IntrinsicInst>(I);
+  if (II == nullptr)
+    return nullptr;
+
+  if (II->getIntrinsicID() != Intrinsic::structured_gep)
+    return nullptr;
+  return II;
+}
+
+
 class SPIRVEmitIntrinsics
     : public ModulePass,
       public InstVisitor<SPIRVEmitIntrinsics, Instruction *> {
@@ -79,7 +97,7 @@ class SPIRVEmitIntrinsics
   DenseMap<Value *, bool> TodoType;
   void insertTodoType(Value *Op) {
     // TODO: add isa<CallInst>(Op) to no-insert
-    if (CanTodoType && !isa<GetElementPtrInst>(Op)) {
+    if (CanTodoType && !isaGEP(Op)) {
       auto It = TodoType.try_emplace(Op, true);
       if (It.second)
         ++TodoTypeSz;
@@ -93,7 +111,7 @@ class SPIRVEmitIntrinsics
     }
   }
   bool isTodoType(Value *Op) {
-    if (isa<GetElementPtrInst>(Op))
+    if (isaGEP(Op))
       return false;
     auto It = TodoType.find(Op);
     return It != TodoType.end() && It->second;
@@ -192,8 +210,6 @@ class SPIRVEmitIntrinsics
 
   void applyDemangledPtrArgTypes(IRBuilder<> &B);
 
-  GetElementPtrInst *simplifyZeroLengthArrayGepInst(GetElementPtrInst *GEP);
-
   bool runOnFunction(Function &F);
   bool postprocessTypes(Module &M);
   bool processFunctionPointers(Module &M);
@@ -216,7 +232,7 @@ class SPIRVEmitIntrinsics
   //      Offset: the Value* containing the byte offset into the array.
   // Return true if an error occured during the walk, false otherwise.
   bool walkLogicalAccessChain(
-      GetElementPtrInst &GEP,
+      IntrinsicInst &GEP,
       const std::function<void(Type *PointedType, uint64_t Index)>
           &OnLiteralIndexing,
       const std::function<void(Type *ElementType, Value *Offset)>
@@ -226,16 +242,16 @@ class SPIRVEmitIntrinsics
   // on the GEP type.
   // FIXME: GEP types are not supposed to be used to retrieve the pointed
   // type. This must be fixed.
-  Type *getGEPType(GetElementPtrInst *GEP);
+  Type *getGEPType(IntrinsicInst *GEP);
 
   // Returns the type accessed using the given GEP instruction by walking
   // the source type using the GEP indices.
   // FIXME: without help from the frontend, this method cannot reliably retrieve
   // the stored type, nor can robustly determine the depth of the type
   // we are accessing.
-  Type *getGEPTypeLogical(GetElementPtrInst *GEP);
+  Type *getGEPTypeLogical(IntrinsicInst *GEP);
 
-  Instruction *buildLogicalAccessChainFromGEP(GetElementPtrInst &GEP);
+  Instruction *buildLogicalAccessChainFromGEP(IntrinsicInst &GEP);
 
 public:
   static char ID;
@@ -244,6 +260,7 @@ public:
   Instruction *visitInstruction(Instruction &I) { return &I; }
   Instruction *visitSwitchInst(SwitchInst &I);
   Instruction *visitGetElementPtrInst(GetElementPtrInst &I);
+  Instruction *visitIntrinsicInst(IntrinsicInst &I);
   Instruction *visitBitCastInst(BitCastInst &I);
   Instruction *visitInsertElementInst(InsertElementInst &I);
   Instruction *visitExtractElementInst(ExtractElementInst &I);
@@ -490,7 +507,7 @@ void SPIRVEmitIntrinsics::propagateElemType(
     Instruction *UI = dyn_cast<Instruction>(U);
     // If the instruction was validated already, we need to keep it valid by
     // keeping current Op type.
-    if (isa<GetElementPtrInst>(UI) ||
+    if (isaGEP(UI) ||
         TypeValidated.find(UI) != TypeValidated.end())
       replaceUsesOfWithSpvPtrcast(Op, ElemTy, UI, Ptrcasts);
   }
@@ -521,7 +538,7 @@ void SPIRVEmitIntrinsics::propagateElemTypeRec(
     Instruction *UI = dyn_cast<Instruction>(U);
     // If the instruction was validated already, we need to keep it valid by
     // keeping current Op type.
-    if (isa<GetElementPtrInst>(UI) ||
+    if (isaGEP(UI) ||
         TypeValidated.find(UI) != TypeValidated.end())
       replaceUsesOfWithSpvPtrcast(Op, CastElemTy, UI, Ptrcasts);
   }
@@ -609,21 +626,65 @@ void SPIRVEmitIntrinsics::maybeAssignPtrType(Type *&Ty, Value *Op, Type *RefTy,
   Ty = RefTy;
 }
 
+struct StructuredGEP {
+  StructuredGEP(Instruction *I)
+    : Instruction(I) {
+    for (size_t I = 2; I < Instruction->getNumOperands(); ++I)
+      Indices.push_back(Instruction->getOperand(I));
+  }
+
+  unsigned getPointerOperandIndex()  const {
+    return 1;
+  }
+
+  Value* getPointerOperand() const {
+    return Instruction->getOperand(getPointerOperandIndex());
+  }
+
+  Type *getSourceElementType() const {
+    return Instruction->getOperand(0)->getType();
+  }
+
+  // FIXME: walk the indices to determine the type.
+  Type *getResultElementType() const {
+    return Instruction->getOperand(0)->getType();
+  }
+
+  SmallVectorImpl<Value*>::const_iterator idx_begin() const {
+    return Indices.begin();
+  }
+
+  bool isInBounds() const {
+    return true;
+  }
+
+  Value* getOperand(unsigned Index) const {
+    return Instruction->getOperand(Index);
+  }
+
+  unsigned getIndicesCount() const {
+    return Instruction->getNumOperands() - 3;
+  }
+
+  Value* getIndexOperand(unsigned Index) const {
+    return getOperand(Index + 2);
+  }
+
+private:
+  Instruction *Instruction;
+  SmallVector<Value*, 4> Indices;
+};
+
 bool SPIRVEmitIntrinsics::walkLogicalAccessChain(
-    GetElementPtrInst &GEP,
+    IntrinsicInst &GEP,
     const std::function<void(Type *, uint64_t)> &OnLiteralIndexing,
     const std::function<void(Type *, Value *)> &OnDynamicIndexing) {
-  // We only rewrite i8* GEP. Other should be left as-is.
-  // Valid i8* GEP must always have a single index.
-  assert(GEP.getSourceElementType() ==
-         IntegerType::getInt8Ty(CurrF->getContext()));
-  assert(GEP.getNumIndices() == 1);
 
+  StructuredGEP SGEP(&GEP);
   auto &DL = CurrF->getDataLayout();
-  Value *Src = getPointerRoot(GEP.getPointerOperand());
-  Type *CurType = deduceElementType(Src, true);
+  Type *CurType = SGEP.getSourceElementType();
 
-  Value *Operand = *GEP.idx_begin();
+  Value *Operand = *SGEP.idx_begin();
   ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
   if (!CI) {
     ArrayType *AT = dyn_cast<ArrayType>(CurType);
@@ -665,7 +726,7 @@ bool SPIRVEmitIntrinsics::walkLogicalAccessChain(
 }
 
 Instruction *
-SPIRVEmitIntrinsics::buildLogicalAccessChainFromGEP(GetElementPtrInst &GEP) {
+SPIRVEmitIntrinsics::buildLogicalAccessChainFromGEP(IntrinsicInst &GEP) {
   auto &DL = CurrF->getDataLayout();
   IRBuilder<> B(GEP.getParent());
   B.SetInsertPoint(&GEP);
@@ -689,43 +750,28 @@ SPIRVEmitIntrinsics::buildLogicalAccessChainFromGEP(GetElementPtrInst &GEP) {
 
   SmallVector<Type *, 2> Types = {GEP.getType(), GEP.getOperand(0)->getType()};
   SmallVector<Value *, 4> Args;
-  Args.push_back(B.getInt1(GEP.isInBounds()));
-  Args.push_back(GEP.getOperand(0));
+  StructuredGEP SGEP(&GEP);
+  Args.push_back(B.getInt1(SGEP.isInBounds()));
+  Args.push_back(SGEP.getPointerOperand());
   llvm::append_range(Args, Indices);
   auto *NewI = B.CreateIntrinsic(Intrinsic::spv_gep, {Types}, {Args});
   replaceAllUsesWithAndErase(B, &GEP, NewI);
   return NewI;
 }
 
-Type *SPIRVEmitIntrinsics::getGEPTypeLogical(GetElementPtrInst *GEP) {
-
-  Type *CurType = GEP->getResultElementType();
+Type *SPIRVEmitIntrinsics::getGEPTypeLogical(IntrinsicInst *GEP) {
+  StructuredGEP SGEP(GEP);
+  Type *CurType = SGEP.getResultElementType();
 
   bool Interrupted = walkLogicalAccessChain(
       *GEP, [&CurType](Type *EltType, uint64_t Index) { CurType = EltType; },
       [&CurType](Type *EltType, Value *Index) { CurType = EltType; });
 
-  return Interrupted ? GEP->getResultElementType() : CurType;
+  return Interrupted ? SGEP.getResultElementType() : CurType;
 }
 
-Type *SPIRVEmitIntrinsics::getGEPType(GetElementPtrInst *Ref) {
-  if (Ref->getSourceElementType() ==
-          IntegerType::getInt8Ty(CurrF->getContext()) &&
-      TM->getSubtargetImpl()->isLogicalSPIRV()) {
-    return getGEPTypeLogical(Ref);
-  }
-
-  Type *Ty = nullptr;
-  // TODO: not sure if GetElementPtrInst::getTypeAtIndex() does anything
-  // useful here
-  if (isNestedPointer(Ref->getSourceElementType())) {
-    Ty = Ref->getSourceElementType();
-    for (Use &U : drop_begin(Ref->indices()))
-      Ty = GetElementPtrInst::getTypeAtIndex(Ty, U.get());
-  } else {
-    Ty = Ref->getResultElementType();
-  }
-  return Ty;
+Type *SPIRVEmitIntrinsics::getGEPType(IntrinsicInst *Ref) {
+  return getGEPTypeLogical(Ref);
 }
 
 Type *SPIRVEmitIntrinsics::deduceElementTypeHelper(
@@ -749,8 +795,8 @@ Type *SPIRVEmitIntrinsics::deduceElementTypeHelper(
   // look for known basic patterns of type inference
   if (auto *Ref = dyn_cast<AllocaInst>(I)) {
     maybeAssignPtrType(Ty, I, Ref->getAllocatedType(), UnknownElemTypeI8);
-  } else if (auto *Ref = dyn_cast<GetElementPtrInst>(I)) {
-    Ty = getGEPType(Ref);
+  } else if (isaGEP(I)) {
+    Ty = getGEPType(cast<IntrinsicInst>(I));
   } else if (auto *Ref = dyn_cast<LoadInst>(I)) {
     Value *Op = Ref->getPointerOperand();
     Type *KnownTy = GR->findDeducedElementType(Op);
@@ -1176,12 +1222,12 @@ void SPIRVEmitIntrinsics::deduceOperandElementType(
       return;
     Incomplete = isTodoType(I);
     Ops.push_back(std::make_pair(Ref->getOperand(0), 0));
-  } else if (auto *Ref = dyn_cast<GetElementPtrInst>(I)) {
-    if (GR->findDeducedElementType(Ref->getPointerOperand()))
+  } else if (auto *Ref = dyncastGEP(I)) {
+    StructuredGEP SGEP(Ref);
+    if (GR->findDeducedElementType(SGEP.getPointerOperand()))
       return;
-    KnownElemTy = Ref->getSourceElementType();
-    Ops.push_back(std::make_pair(Ref->getPointerOperand(),
-                                 GetElementPtrInst::getPointerOperandIndex()));
+    KnownElemTy = SGEP.getSourceElementType();
+    Ops.push_back(std::make_pair(SGEP.getPointerOperand(), SGEP.getPointerOperandIndex()));
   } else if (auto *Ref = dyn_cast<LoadInst>(I)) {
     KnownElemTy = I->getType();
     if (isUntypedPointerTy(KnownElemTy))
@@ -1570,8 +1616,17 @@ Instruction *SPIRVEmitIntrinsics::visitSwitchInst(SwitchInst &I) {
   return BrI;
 }
 
-Instruction *SPIRVEmitIntrinsics::visitGetElementPtrInst(GetElementPtrInst &I) {
-  if (I.getSourceElementType() == IntegerType::getInt8Ty(CurrF->getContext()) &&
+Instruction *SPIRVEmitIntrinsics::visitGetElementPtrInst(GetElementPtrInst &GEP) {
+  assert(0);
+  return &GEP;
+}
+
+Instruction *SPIRVEmitIntrinsics::visitIntrinsicInst(IntrinsicInst &I) {
+  if (!isaGEP(&I))
+    return &I;
+
+  StructuredGEP SGEP(&I);
+  if (SGEP.getSourceElementType() == IntegerType::getInt8Ty(CurrF->getContext()) &&
       TM->getSubtargetImpl()->isLogicalSPIRV()) {
     Instruction *Result = buildLogicalAccessChainFromGEP(I);
     if (Result)
@@ -1580,10 +1635,21 @@ Instruction *SPIRVEmitIntrinsics::visitGetElementPtrInst(GetElementPtrInst &I) {
 
   IRBuilder<> B(I.getParent());
   B.SetInsertPoint(&I);
-  SmallVector<Type *, 2> Types = {I.getType(), I.getOperand(0)->getType()};
+
   SmallVector<Value *, 4> Args;
-  Args.push_back(B.getInt1(I.isInBounds()));
-  llvm::append_range(Args, I.operands());
+  Args.push_back(B.getInt1(SGEP.isInBounds()));
+  Args.push_back(SGEP.getPointerOperand());
+  for (size_t I = 0; I < SGEP.getIndicesCount(); I++)
+    Args.push_back(SGEP.getIndexOperand(I));
+
+  // FIXME: should not be required.
+  if (SGEP.getIndicesCount() == 0)
+    Args.push_back(B.getInt32(0));
+
+  SmallVector<Type *, 2> Types;// = {I.getType(), I.getOperand(0)->getType()};
+  Types.push_back(Args[1]->getType());
+  Types.push_back(Args[1]->getType());
+
   auto *NewI = B.CreateIntrinsic(Intrinsic::spv_gep, {Types}, {Args});
   replaceAllUsesWithAndErase(B, &I, NewI);
   return NewI;
@@ -1706,7 +1772,7 @@ void SPIRVEmitIntrinsics::replacePointerOperandWithPtrCast(
       return;
     } else if (isTodoType(Pointer)) {
       eraseTodoType(Pointer);
-      if (!isa<CallInst>(Pointer) && !isa<GetElementPtrInst>(Pointer)) {
+      if (!isa<CallInst>(Pointer) && !isaGEP(Pointer)) {
         //  If this wouldn't be the first spv_ptrcast but existing type info is
         //  uncomplete, update spv_assign_ptr_type arguments.
         if (CallInst *AssignCI = GR->findAssignPtrTypeInstr(Pointer)) {
@@ -1769,8 +1835,9 @@ void SPIRVEmitIntrinsics::insertPtrCastOrAssignTypeInstr(Instruction *I,
     replacePointerOperandWithPtrCast(I, Pointer, OpTy, 0, B);
     return;
   }
-  if (GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(I)) {
-    Value *Pointer = GEPI->getPointerOperand();
+  if (auto *GEPI = dyncastGEP(I)) {
+    StructuredGEP SGEP(GEPI);
+    Value *Pointer = SGEP.getPointerOperand();
     Type *OpTy = nullptr;
 
     // Knowing the accessed type is mandatory for logical SPIR-V. Sadly,
@@ -1779,7 +1846,7 @@ void SPIRVEmitIntrinsics::insertPtrCastOrAssignTypeInstr(Instruction *I,
     // Physical SPIR-V can work around this, but not logical, hence still
     // try to rely on the broken type scavenging for logical.
     bool IsRewrittenGEP =
-        GEPI->getSourceElementType() == IntegerType::getInt8Ty(I->getContext());
+        SGEP.getSourceElementType() == IntegerType::getInt8Ty(I->getContext());
     if (IsRewrittenGEP && TM->getSubtargetImpl()->isLogicalSPIRV()) {
       Value *Src = getPointerRoot(Pointer);
       OpTy = GR->findDeducedElementType(Src);
@@ -1787,7 +1854,7 @@ void SPIRVEmitIntrinsics::insertPtrCastOrAssignTypeInstr(Instruction *I,
 
     // In all cases, fall back to the GEP type if type scavenging failed.
     if (!OpTy)
-      OpTy = GEPI->getSourceElementType();
+      OpTy = SGEP.getSourceElementType();
 
     replacePointerOperandWithPtrCast(I, Pointer, OpTy, 0, B);
     if (isNestedPointer(OpTy))
@@ -2734,7 +2801,7 @@ void SPIRVEmitIntrinsics::applyDemangledPtrArgTypes(IRBuilder<> &B) {
             B.SetCurrentDebugLocation(DebugLoc());
             GR->buildAssignPtr(B, ElemTy, Arg);
           }
-        } else if (isa<GetElementPtrInst>(Param)) {
+        } else if (isaGEP(Param)) {
           replaceUsesOfWithSpvPtrcast(Param, normalizeType(ElemTy), CI,
                                       Ptrcasts);
         } else if (isa<Instruction>(Param)) {
@@ -2764,30 +2831,6 @@ void SPIRVEmitIntrinsics::applyDemangledPtrArgTypes(IRBuilder<> &B) {
   }
 }
 
-GetElementPtrInst *
-SPIRVEmitIntrinsics::simplifyZeroLengthArrayGepInst(GetElementPtrInst *GEP) {
-  // getelementptr [0 x T], P, 0 (zero), I -> getelementptr T, P, I.
-  // If type is 0-length array and first index is 0 (zero), drop both the
-  // 0-length array type and the first index. This is a common pattern in
-  // the IR, e.g. when using a zero-length array as a placeholder for a
-  // flexible array such as unbound arrays.
-  assert(GEP && "GEP is null");
-  Type *SrcTy = GEP->getSourceElementType();
-  SmallVector<Value *, 8> Indices(GEP->indices());
-  ArrayType *ArrTy = dyn_cast<ArrayType>(SrcTy);
-  if (ArrTy && ArrTy->getNumElements() == 0 &&
-      PatternMatch::match(Indices[0], PatternMatch::m_Zero())) {
-    IRBuilder<> Builder(GEP);
-    Indices.erase(Indices.begin());
-    SrcTy = ArrTy->getElementType();
-    Value *NewGEP = Builder.CreateGEP(SrcTy, GEP->getPointerOperand(), Indices,
-                                      "", GEP->getNoWrapFlags());
-    assert(llvm::isa<GetElementPtrInst>(NewGEP) && "NewGEP should be a GEP");
-    return cast<GetElementPtrInst>(NewGEP);
-  }
-  return nullptr;
-}
-
 bool SPIRVEmitIntrinsics::runOnFunction(Function &Func) {
   if (Func.isDeclaration())
     return false;
@@ -2809,16 +2852,10 @@ bool SPIRVEmitIntrinsics::runOnFunction(Function &Func) {
   // Data structure for dead instructions that were simplified and replaced.
   SmallPtrSet<Instruction *, 4> DeadInsts;
   for (auto &I : instructions(Func)) {
-    auto *Ref = dyn_cast<GetElementPtrInst>(&I);
+    auto *Ref = dyncastGEP(&I);
     if (!Ref || GR->findDeducedElementType(Ref))
       continue;
 
-    GetElementPtrInst *NewGEP = simplifyZeroLengthArrayGepInst(Ref);
-    if (NewGEP) {
-      Ref->replaceAllUsesWith(NewGEP);
-      DeadInsts.insert(Ref);
-      Ref = NewGEP;
-    }
     if (Type *GepTy = getGEPType(Ref))
       GR->addDeducedElementType(Ref, normalizeType(GepTy));
   }
@@ -2916,7 +2953,7 @@ bool SPIRVEmitIntrinsics::postprocessTypes(Module &M) {
   DenseMap<Value *, SmallPtrSet<Value *, 4>> ToProcess;
   for (auto [Op, Enabled] : TodoType) {
     // TODO: add isa<CallInst>(Op) to continue
-    if (!Enabled || isa<GetElementPtrInst>(Op))
+    if (!Enabled || isaGEP(Op))
       continue;
     CallInst *AssignCI = GR->findAssignPtrTypeInstr(Op);
     Type *KnownTy = GR->findDeducedElementType(Op);
