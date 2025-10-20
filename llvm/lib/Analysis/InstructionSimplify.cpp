@@ -78,6 +78,7 @@ static Value *simplifyCastInst(unsigned, Value *, Type *, const SimplifyQuery &,
                                unsigned);
 static Value *simplifyGEPInst(Type *, Value *, ArrayRef<Value *>,
                               GEPNoWrapFlags, const SimplifyQuery &, unsigned);
+static Value *simplifyStructuredGEP(IntrinsicInst *II);
 static Value *simplifySelectInst(Value *, Value *, Value *,
                                  const SimplifyQuery &, unsigned);
 static Value *simplifyInstructionWithOperands(Instruction *I,
@@ -4467,6 +4468,11 @@ static Value *simplifyWithOpsReplaced(Value *V,
       if (NewOps.size() == 2 && match(NewOps[1], m_Zero()))
         return NewOps[0];
     }
+
+    if (auto *II = dyn_cast<IntrinsicInst>(I)) {
+      if (II->getIntrinsicID() == Intrinsic::structured_gep && II->getNumOperands() <= 3)
+        return NewOps[1];
+    }
   } else {
     // The simplification queries below may return the original value. Consider:
     //   %div = udiv i32 %arg, %arg2
@@ -5048,6 +5054,15 @@ static Value *simplifySelectInst(Value *Cond, Value *TrueVal, Value *FalseVal,
 Value *llvm::simplifySelectInst(Value *Cond, Value *TrueVal, Value *FalseVal,
                                 const SimplifyQuery &Q) {
   return ::simplifySelectInst(Cond, TrueVal, FalseVal, Q, RecursionLimit);
+}
+
+static Value *simplifyStructuredGEP(IntrinsicInst *II) {
+  assert(II->getIntrinsicID() == Intrinsic::structured_gep);
+  if (II->getNumOperands() <= 3) {
+    Value *Ptr = II->getOperand(1);
+    return Ptr;
+  }
+  return nullptr;
 }
 
 /// Given operands for an GetElementPtrInst, see if we can fold the result.
@@ -7280,6 +7295,11 @@ static Value *simplifyInstructionWithOperands(Instruction *I,
          "context instruction should be in the same function");
 
   const SimplifyQuery Q = SQ.CxtI ? SQ : SQ.getWithInstruction(I);
+
+  if (auto *II = dyn_cast<IntrinsicInst>(I)) {
+    if (II->getIntrinsicID() == Intrinsic::structured_gep)
+      return simplifyStructuredGEP(II);
+  }
 
   switch (I->getOpcode()) {
   default:

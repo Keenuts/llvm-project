@@ -2864,10 +2864,10 @@ def int_experimental_convergence_loop
   : DefaultAttrsIntrinsic<[llvm_token_ty], [], [IntrNoMem, IntrConvergent]>;
 
 def int_structured_gep
-  : Intrinsic<[llvm_anyptr_ty], [llvm_any_ty, LLVMMatchType<0>, llvm_vararg_ty], []>;
+  : Intrinsic<[llvm_anyptr_ty], [llvm_any_ty, LLVMMatchType<0>, llvm_vararg_ty], [IntrNoMem, IntrWillReturn]>;
 
 def int_structured_gep_inbounds
-  : Intrinsic<[llvm_anyptr_ty], [llvm_any_ty, LLVMMatchType<0>, llvm_vararg_ty], []>;
+  : Intrinsic<[llvm_anyptr_ty], [llvm_any_ty, LLVMMatchType<0>, llvm_vararg_ty], [IntrNoMem, IntrWillReturn]>;
 
 //===----------------------------------------------------------------------===//
 // Target-specific intrinsics
