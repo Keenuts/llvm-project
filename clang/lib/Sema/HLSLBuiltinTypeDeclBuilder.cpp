@@ -856,7 +856,7 @@ BuiltinTypeDeclBuilder &
 BuiltinTypeDeclBuilder::addStaticInitializationFunctions(bool HasCounter) {
   if (HasCounter) {
     addCreateFromBindingWithImplicitCounter();
-    //addCreateFromImplicitBindingWithImplicitCounter();
+    addCreateFromImplicitBindingWithImplicitCounter();
   } else {
     addCreateFromBinding();
     addCreateFromImplicitBinding();
