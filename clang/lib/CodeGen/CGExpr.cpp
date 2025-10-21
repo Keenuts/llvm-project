@@ -4423,7 +4423,7 @@ static llvm::Value *emitStructuredGEP(CodeGenFunction &CGF,
     SmallVector<llvm::Value*, 4> Args;
     Args.push_back(llvm::PoisonValue::get(BaseType));
     Args.push_back(Ptr);
-    for (size_t I = 1; I < Indices.size(); I++)
+    for (size_t I = 0; I < Indices.size(); I++)
       Args.push_back(Indices[I]);
 
     llvm::Function *Fn = CGF.CGM.getIntrinsic(llvm::Intrinsic::structured_gep, { Ptr->getType(), BaseType });
@@ -4452,6 +4452,10 @@ Address CodeGenFunction::EmitArrayToPointerDecay(const Expr *E,
            "Expected pointer to array");
     if (getLangOpts().HLSL) {
       llvm::Value *Ptr = Addr.emitRawPointer(*this);
+
+      if (auto *C = dyn_cast<llvm::Constant>(Ptr)) {
+        return Address(C, Addr.getElementType(), Addr.getAlignment(), Addr.isKnownNonNull());
+      }
 
       return Address(
           emitStructuredGEP(*this, NewTy, Ptr, { Builder.getSize(0) }),
@@ -4498,8 +4502,9 @@ static llvm::Value *emitArraySubscriptGEP(CodeGenFunction &CGF,
                                           bool signedIndices,
                                           SourceLocation loc,
                                     const llvm::Twine &name = "arrayidx") {
-  if (CGF.getLangOpts().HLSL)
+  if (CGF.getLangOpts().HLSL) {
     return emitStructuredGEP(CGF, elemType, ptr, indices);
+  }
 
   if (inbounds) {
     return CGF.EmitCheckedInBoundsGEP(elemType, ptr, indices, signedIndices,
@@ -4512,6 +4517,7 @@ static llvm::Value *emitArraySubscriptGEP(CodeGenFunction &CGF,
 
 static Address emitArraySubscriptGEP(CodeGenFunction &CGF, Address addr,
                                      ArrayRef<llvm::Value *> indices,
+                                     llvm::Type *arrayType,
                                      llvm::Type *elementType, bool inbounds,
                                      bool signedIndices, SourceLocation loc,
                                      CharUnits align,
@@ -4519,7 +4525,10 @@ static Address emitArraySubscriptGEP(CodeGenFunction &CGF, Address addr,
 
   if (CGF.getLangOpts().HLSL) {
     llvm::Value *Ptr = addr.emitRawPointer(CGF);
-    return RawAddress(emitStructuredGEP(CGF, elementType, Ptr, indices), elementType, align);
+    SmallVector<llvm::Value*, 4> SGEPIndices;
+    for (size_t I = 1; I < indices.size(); I++)
+      SGEPIndices.push_back(indices[I]);
+    return RawAddress(emitStructuredGEP(CGF, arrayType, Ptr, SGEPIndices), elementType, align);
   }
 
   if (inbounds) {
@@ -4637,7 +4646,7 @@ static Address emitArraySubscriptGEP(CodeGenFunction &CGF, Address addr,
   auto LastIndex = dyn_cast<llvm::ConstantInt>(indices.back());
   if (!LastIndex ||
       (!CGF.IsInPreservedAIRegion && !IsPreserveAIArrayBase(CGF, Base))) {
-    addr = emitArraySubscriptGEP(CGF, addr, indices,
+    addr = emitArraySubscriptGEP(CGF, addr, indices, CGF.ConvertTypeForMem(*arrayType),
                                  CGF.ConvertTypeForMem(eltType), inbounds,
                                  signedIndices, loc, eltAlign, name);
     return addr;

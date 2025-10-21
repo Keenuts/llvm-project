@@ -645,9 +645,25 @@ struct StructuredGEP {
     return Instruction->getOperand(0)->getType();
   }
 
-  // FIXME: walk the indices to determine the type.
   Type *getResultElementType() const {
-    return Instruction->getOperand(0)->getType();
+    Type *CurrentType = getSourceElementType();
+    for (unsigned I = 0; I < getIndicesCount(); I++) {
+      Value *V = getIndexOperand(I);
+      ConstantInt *CI = dyn_cast<ConstantInt>(V);
+      if (!CI)
+        return nullptr;
+
+      if (ArrayType *AT = dyn_cast<ArrayType>(CurrentType)) {
+        CurrentType = AT->getElementType();
+      } else if (StructType *ST = dyn_cast<StructType>(CurrentType)) {
+        CurrentType = ST->getElementType(CI->getZExtValue());
+      } else {
+        // FIXME?
+        assert(0);
+      }
+    }
+
+    return CurrentType;
   }
 
   SmallVectorImpl<Value*>::const_iterator idx_begin() const {
@@ -761,13 +777,7 @@ SPIRVEmitIntrinsics::buildLogicalAccessChainFromGEP(IntrinsicInst &GEP) {
 
 Type *SPIRVEmitIntrinsics::getGEPTypeLogical(IntrinsicInst *GEP) {
   StructuredGEP SGEP(GEP);
-  Type *CurType = SGEP.getResultElementType();
-
-  bool Interrupted = walkLogicalAccessChain(
-      *GEP, [&CurType](Type *EltType, uint64_t Index) { CurType = EltType; },
-      [&CurType](Type *EltType, Value *Index) { CurType = EltType; });
-
-  return Interrupted ? SGEP.getResultElementType() : CurType;
+  return SGEP.getResultElementType();
 }
 
 Type *SPIRVEmitIntrinsics::getGEPType(IntrinsicInst *Ref) {
@@ -1224,10 +1234,9 @@ void SPIRVEmitIntrinsics::deduceOperandElementType(
     Ops.push_back(std::make_pair(Ref->getOperand(0), 0));
   } else if (auto *Ref = dyncastGEP(I)) {
     StructuredGEP SGEP(Ref);
-    if (GR->findDeducedElementType(SGEP.getPointerOperand()))
-      return;
-    KnownElemTy = SGEP.getSourceElementType();
+    KnownElemTy = SGEP.getResultElementType();
     Ops.push_back(std::make_pair(SGEP.getPointerOperand(), SGEP.getPointerOperandIndex()));
+
   } else if (auto *Ref = dyn_cast<LoadInst>(I)) {
     KnownElemTy = I->getType();
     if (isUntypedPointerTy(KnownElemTy))
@@ -1405,6 +1414,9 @@ void SPIRVEmitIntrinsics::preprocessUndefs(IRBuilder<> &B) {
     Instruction *I = Worklist.front();
     bool BPrepared = false;
     Worklist.pop();
+
+    if (isaGEP(I))
+      continue;
 
     for (auto &Op : I->operands()) {
       auto *AggrUndef = dyn_cast<UndefValue>(Op);

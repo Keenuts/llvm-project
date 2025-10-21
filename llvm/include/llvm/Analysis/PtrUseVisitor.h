@@ -175,6 +175,8 @@ protected:
   /// This routine does the heavy lifting of the pointer walk by computing
   /// offsets and looking through GEPs.
   bool adjustOffsetForGEP(GetElementPtrInst &GEPI);
+
+  bool adjustOffsetForSGEP(IntrinsicInst &II);
 };
 
 } // end namespace detail
@@ -300,6 +302,15 @@ protected:
     case Intrinsic::lifetime_start:
     case Intrinsic::lifetime_end:
       return; // No-op intrinsics.
+
+    case Intrinsic::structured_gep: {
+        if (!adjustOffsetForSGEP(II)) {
+          IsOffsetKnown = false;
+          Offset = APInt();
+        }
+        enqueueUsers(II);
+        return;
+      }
     }
   }
 

@@ -1256,6 +1256,11 @@ private:
       return;
     }
 
+    //if (II.getIntrinsicID() == Intrinsic::structured_gep) {
+    //  enqueueUsers(II);
+    //  return;
+    //}
+
     Base::visitIntrinsicInst(II);
   }
 
