@@ -174,6 +174,9 @@ static bool analyzeGlobalAux(const Value *V, GlobalStatus &GS,
         if (CB->getIntrinsicID() == Intrinsic::threadlocal_address) {
           if (analyzeGlobalAux(I, GS, VisitedUsers))
             return true;
+        } else if (CB->getIntrinsicID() == Intrinsic::structured_gep) {
+          if (analyzeGlobalAux(I, GS, VisitedUsers))
+            return true;
         } else {
           if (!CB->isCallee(&U))
             return true;

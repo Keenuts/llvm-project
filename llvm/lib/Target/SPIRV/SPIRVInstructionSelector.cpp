@@ -3051,8 +3051,8 @@ bool SPIRVInstructionSelector::selectGEP(Register ResVReg,
   // Adding indices.
   const unsigned StartingIndex =
       (Opcode == SPIRV::OpAccessChain || Opcode == SPIRV::OpInBoundsAccessChain)
-          ? 5
-          : 4;
+          ? 4
+          : 3;
   for (unsigned i = StartingIndex; i < I.getNumExplicitOperands(); ++i)
     Res.addUse(I.getOperand(i).getReg());
   return Res.constrainAllUses(TII, TRI, RBI);

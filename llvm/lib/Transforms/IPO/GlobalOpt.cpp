@@ -332,6 +332,8 @@ static bool CleanupConstantGlobalUsers(GlobalVariable *GV,
     } else if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(U)) {
       if (II->getIntrinsicID() == Intrinsic::threadlocal_address)
         append_range(WorkList, II->users());
+      else if (II->getIntrinsicID() == Intrinsic::structured_gep)
+        append_range(WorkList, II->users());
     }
   }
 
