@@ -31568,3 +31568,76 @@ Semantics:
 
 The '``llvm.preserve.struct.access.index``' intrinsic produces the same result
 as a getelementptr with base ``base`` and access operands ``{0, gep_index}``.
+
+'``llvm.structured.gep``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+::
+
+      declare <ret_type>
+      @llvm.structured.gep(<type> %basetype, ptr %source, i32 index0, ...)
+
+Overview:
+"""""""""
+
+The '``llvm.structured.gep``' intrinsic returns the source pointer offsetted
+by a number of bytes depending on the physical layout of the basetype and
+the list of indices.
+
+Arguments:
+""""""""""
+
+``basetype``
+The type of the element pointed by the pointer ``source``. This type
+will be used along with the provided ``indices`` to compute the byte offset
+to apply to ``source`` depending on the physical layout of ``basetype`` at
+runtime.
+
+The the structure base address. The ``gep_index`` is the struct member index
+based on IR structures. The ``di_index`` is the struct member index based on debuginfo.
+
+``source``
+A pointer to a valid memory location of type ``basetype``.
+
+``index0``, ``index1``, ...
+Indices used to traverse into the ``basetype`` and determine the target
+element this instruction computes an offset for.
+
+Semantics:
+""""""""""
+
+The '``llvm.structured.gep``' intrinsic returns the source pointer offsetted
+by a number of bytes depending on the physical layout of the basetype and
+the indices list.
+The first index determines which element/field of basetype is selected, and
+computes its `offsetof` in bytes and add this to the result. This
+element/field type becomes the basetype for the next index and so on
+recursively until a scalar type is reached or all indices are consumed.
+
+All indices must be consumed, and it is illegal to index into a scalar type.
+Meaning the maximum number of indices depends on the depth of the basetype.
+
+If the indexed type is a struct, the index must be a constant value and be
+a valid field index in this type.
+
+If the index is an immediate or known/deduced compile-time value, its value
+must be in bounds otherwise the instruction is considered invalid. For
+indices only known at runtime, their value are assumed to be in-bounds and
+not to overflow:
+
+    If the traversed type is a struct with ``N`` fields, the index is assumed
+    to belong to ``[0; N[``.
+    If the traversed type is an array or vector of ``N`` elements, the index
+    belongs to ``[0; N[``.
+
+If the ``source`` pointer is ``poison``, the instruction returns ``poison``.
+
+This instruction assumes the pointer ``source`` points to a valid memory
+location containing a type ``basetype``. As such, if the source pointer points
+to an invalid memory location, or to a type other then ``basetype``, the
+result is undefined.
+This instruction does not dereference any pointer, but requires the ``source``
+operand to be a valid memory location. Meaning this instruction cannot be used
+as an `offsetof` by providing ``ptr 0`` as source.
